@@ -1,31 +1,56 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { bizApiFetch, BizApiError } from "@/lib/api";
+import { saveBizSession, type BizAccount } from "@/lib/session";
 
 type ErrorType = null | "mismatch" | "disabled";
 
-/**
- * TODO(auth 연동): 실제로는 백엔드 로그인 API 응답으로 errorType을 판정한다.
- * 지금은 회원가입 링크 없음 / login_id 방식 / 에러 2종(불일치·비활성화) UI를
- * 확인할 수 있도록 데모용 로컬 판정만 넣어둔다.
- */
-function mockAuthenticate(loginId: string): ErrorType {
-  if (loginId === "oldshop_mapo") return "disabled";
-  if (loginId.length > 0) return "mismatch";
-  return null;
-}
+type LoginResponse = {
+  accessToken: string;
+  account: BizAccount;
+};
 
 export default function LoginPage() {
+  const router = useRouter();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errorType, setErrorType] = useState<ErrorType>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const disabled = errorType === "disabled";
+  // 403(정지·계약종료·잠금)은 자물쇠 스타일로 서버 문구를 그대로 안내한다.
+  // 입력은 제출 중에만 잠근다 — 403 후에도 다른 계정으로 재시도할 수 있어야 한다.
+  const disabled = submitting;
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setErrorType(mockAuthenticate(loginId));
+    if (submitting) return;
+    setSubmitting(true);
+    setErrorType(null);
+    setErrorMessage(null);
+    try {
+      const result = await bizApiFetch<LoginResponse>("/biz/auth/login", {
+        method: "POST",
+        body: { loginId, password },
+      });
+      saveBizSession(result.accessToken, result.account);
+      router.replace(result.account.mustChangePassword ? "/change-password" : "/dashboard");
+    } catch (error) {
+      if (error instanceof BizApiError && error.status === 403) {
+        setErrorType("disabled");
+        setErrorMessage(error.message);
+      } else {
+        setErrorType("mismatch");
+        setErrorMessage(
+          error instanceof BizApiError && error.status !== 401 ? error.message : null,
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -53,7 +78,7 @@ export default function LoginPage() {
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               <p className="text-sm leading-relaxed text-red-700 m-0 font-medium">
-                아이디 또는 비밀번호가 일치하지 않습니다. 다시 확인해주세요.
+                {errorMessage ?? "아이디 또는 비밀번호가 일치하지 않습니다. 다시 확인해주세요."}
               </p>
             </div>
           )}
@@ -64,7 +89,8 @@ export default function LoginPage() {
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <p className="text-sm leading-relaxed text-amber-800 m-0 font-medium">
-                이 계정은 현재 비활성화 상태입니다. 이용을 원하시면 담당 관리자에게 문의해주세요.
+                {errorMessage ??
+                  "이 계정은 현재 비활성화 상태입니다. 이용을 원하시면 담당 관리자에게 문의해주세요."}
               </p>
             </div>
           )}
@@ -139,7 +165,7 @@ export default function LoginPage() {
             disabled={disabled}
             className="h-[52px] rounded-2xl bg-primary hover:bg-primary-light text-white text-base font-bold shadow-lg shadow-primary/25 transition disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
           >
-            로그인
+            {submitting ? "로그인 중..." : "로그인"}
           </button>
 
           {!disabled && (

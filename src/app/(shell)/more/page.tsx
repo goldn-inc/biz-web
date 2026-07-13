@@ -1,10 +1,13 @@
+"use client";
+
 import Link from "next/link";
 import { CatalogIcon, ChevronRightIcon, WholesaleIcon } from "@/components/icons";
-import { getMockSession, isWholesaleTier } from "@/lib/session";
+import { useBizSession } from "@/components/shell/BizSessionProvider";
+import { isWholesaleTier } from "@/lib/session";
 
 /** 하단 탭바 "더보기" — 사이드바에서는 상시 노출되지만 탭바 4슬롯엔 못 들어가는 메뉴 모음. */
 export default function MorePage() {
-  const session = getMockSession();
+  const { account: session, logout } = useBizSession();
 
   return (
     <div className="flex flex-col gap-5">
@@ -28,6 +31,16 @@ export default function MorePage() {
             <ChevronRightIcon className="w-4 h-4 text-caption" />
           </Link>
         )}
+      </div>
+      <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={logout}
+          className="w-full flex items-center gap-3.5 px-4 md:px-5 py-3.5 hover:bg-slate-50 text-left"
+        >
+          <div className="flex-1 text-sm font-semibold text-red-600">로그아웃</div>
+          <ChevronRightIcon className="w-4 h-4 text-caption" />
+        </button>
       </div>
     </div>
   );

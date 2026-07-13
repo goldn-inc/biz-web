@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { GemIcon, MinusIcon, PlusIcon, WholesaleIcon, CheckIcon } from "@/components/icons";
 import { Badge, Button, FilterChip } from "@/components/ui";
-import { getMockSession, isWholesaleTier, type BizTier } from "@/lib/session";
+import { useBizSession } from "@/components/shell/BizSessionProvider";
+import { isWholesaleTier, type BizTier } from "@/lib/session";
 
 /** 카탈로그 카테고리 필터 값. "전체"는 필터 미적용을 뜻한다. */
 type Category = "전체" | "골드바" | "목걸이" | "반지" | "돌·답례";
@@ -121,9 +122,9 @@ function unitPriceFor(product: Product, tier: Exclude<BizTier, "NONE">): number 
 }
 
 export default function WholesalePage() {
-  const session = getMockSession();
+  const { account: session } = useBizSession();
 
-  // 등급 게이팅: 도매/도도매가 아니면 접근 안내만 렌더(리다이렉트 없음 — 실제 auth 미연동).
+  // 등급 게이팅: 도매/도도매가 아니면 접근 안내만 렌더. 서버도 tier 를 재검증한다(프론트는 UX용).
   if (!isWholesaleTier(session.tier)) {
     return <AccessNotice />;
   }

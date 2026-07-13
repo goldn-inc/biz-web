@@ -1,19 +1,72 @@
 export type BizTier = "NONE" | "WHOLESALE" | "SUPER_WHOLESALE";
 
-export type BizSession = {
+/** 백엔드 StoreAccountProfileDto 와 동일 형태. */
+export type BizAccount = {
+  id: string;
+  loginId: string;
+  storeId: string;
   storeName: string;
   tier: BizTier;
+  mustChangePassword: boolean;
 };
 
-/**
- * TODO(auth 연동): 실제 로그인 세션/백엔드 응답으로 교체 예정. 지금은 디자인 이식
- * 단계라 도매 화면·게이팅 UI를 확인할 수 있게 고정값을 반환한다.
- */
-export function getMockSession(): BizSession {
-  return {
-    storeName: "종로 골드스타",
-    tier: "NONE",
-  };
+const TOKEN_KEY = "goldsilver_biz_access_token";
+const ACCOUNT_KEY = "goldsilver_biz_account";
+
+/** sessionStorage 기반 세션(admin-web 관례). 탭 닫으면 만료 — 매장 공용 PC 전제. */
+export function saveBizSession(token: string, account: BizAccount): void {
+  sessionStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+}
+
+export function loadBizSession(): { token: string; account: BizAccount } | null {
+  if (typeof window === "undefined") return null;
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  const rawAccount = sessionStorage.getItem(ACCOUNT_KEY);
+  if (!token || !rawAccount) return null;
+  try {
+    return { token, account: JSON.parse(rawAccount) as BizAccount };
+  } catch {
+    return null;
+  }
+}
+
+type BizSessionValue = { token: string; account: BizAccount };
+
+// useSyncExternalStore 스냅샷은 참조가 안정적이어야 해서 raw 문자열 기준으로 캐시한다.
+let snapshotCache: { raw: string; value: BizSessionValue } | null = null;
+
+export function getBizSessionSnapshot(): BizSessionValue | null {
+  if (typeof window === "undefined") return null;
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  const rawAccount = sessionStorage.getItem(ACCOUNT_KEY);
+  if (!token || !rawAccount) return null;
+  const raw = `${token}|${rawAccount}`;
+  if (snapshotCache?.raw === raw) return snapshotCache.value;
+  const loaded = loadBizSession();
+  if (!loaded) return null;
+  snapshotCache = { raw, value: loaded };
+  return loaded;
+}
+
+export function getBizSessionServerSnapshot(): BizSessionValue | null {
+  return null;
+}
+
+/** sessionStorage 는 탭 단위라 외부 변경 알림이 없다 — 구독은 형식상 noop. */
+export function subscribeBizSession(): () => void {
+  return () => {};
+}
+
+export function updateBizAccount(patch: Partial<BizAccount>): void {
+  const session = loadBizSession();
+  if (!session) return;
+  sessionStorage.setItem(ACCOUNT_KEY, JSON.stringify({ ...session.account, ...patch }));
+}
+
+export function clearBizSession(): void {
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(ACCOUNT_KEY);
 }
 
 export function tierLabel(tier: BizTier): string {

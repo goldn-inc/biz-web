@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon } from "@/components/icons";
 import { Badge } from "@/components/ui";
-import { getMockSession, isWholesaleTier, tierLabel } from "@/lib/session";
+import { useBizSession } from "@/components/shell/BizSessionProvider";
+import { isWholesaleTier, tierLabel } from "@/lib/session";
 
 const TODAY_RESERVATIONS = [
   { time: "11:00", name: "김민지", memo: "예물 반지 상담 · 방문 예약", status: "CONFIRMED" as const },
@@ -21,7 +24,7 @@ const RECENT_WHOLESALE_ORDERS = [
 ];
 
 export default function DashboardPage() {
-  const session = getMockSession();
+  const { account: session } = useBizSession();
   const wholesale = isWholesaleTier(session.tier);
 
   return (
