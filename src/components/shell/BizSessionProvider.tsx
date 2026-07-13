@@ -6,6 +6,8 @@ import {
   clearBizSession,
   getBizSessionServerSnapshot,
   getBizSessionSnapshot,
+  getHydratedServerSnapshot,
+  getHydratedSnapshot,
   subscribeBizSession,
   type BizAccount,
 } from "@/lib/session";
@@ -24,6 +26,11 @@ const BizSessionContext = createContext<BizSessionContextValue | null>(null);
  */
 export function BizSessionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const hydrated = useSyncExternalStore(
+    subscribeBizSession,
+    getHydratedSnapshot,
+    getHydratedServerSnapshot,
+  );
   const session = useSyncExternalStore(
     subscribeBizSession,
     getBizSessionSnapshot,
@@ -31,14 +38,15 @@ export function BizSessionProvider({ children }: { children: React.ReactNode }) 
   );
 
   useEffect(() => {
+    if (!hydrated) return; // 하이드레이션 전 세션 null 은 판정 보류(하드 리로드 오탈락 방지)
     if (!session) {
       router.replace("/login");
     } else if (session.account.mustChangePassword) {
       router.replace("/change-password");
     }
-  }, [session, router]);
+  }, [hydrated, session, router]);
 
-  if (!session || session.account.mustChangePassword) return null;
+  if (!hydrated || !session || session.account.mustChangePassword) return null;
 
   return (
     <BizSessionContext.Provider

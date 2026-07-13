@@ -58,6 +58,18 @@ export function subscribeBizSession(): () => void {
   return () => {};
 }
 
+/**
+ * 하이드레이션 완료 여부. SSR/하이드레이션 렌더에서는 세션 스냅샷이 항상 null(서버값)이라,
+ * 이 값이 true 가 되기 전에 "세션 없음 → /login" 판정을 내리면 로그인 상태에서도 튕긴다.
+ */
+export function getHydratedSnapshot(): boolean {
+  return true;
+}
+
+export function getHydratedServerSnapshot(): boolean {
+  return false;
+}
+
 export function updateBizAccount(patch: Partial<BizAccount>): void {
   const session = loadBizSession();
   if (!session) return;

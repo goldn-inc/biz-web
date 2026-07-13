@@ -6,6 +6,8 @@ import { bizApiFetch, BizApiError } from "@/lib/api";
 import {
   getBizSessionServerSnapshot,
   getBizSessionSnapshot,
+  getHydratedServerSnapshot,
+  getHydratedSnapshot,
   loadBizSession,
   subscribeBizSession,
   updateBizAccount,
@@ -23,6 +25,11 @@ export default function ChangePasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const hydrated = useSyncExternalStore(
+    subscribeBizSession,
+    getHydratedSnapshot,
+    getHydratedServerSnapshot,
+  );
   const session = useSyncExternalStore(
     subscribeBizSession,
     getBizSessionSnapshot,
@@ -31,8 +38,9 @@ export default function ChangePasswordPage() {
   const firstTime = session?.account.mustChangePassword ?? false;
 
   useEffect(() => {
-    if (!session) router.replace("/login");
-  }, [session, router]);
+    // 하이드레이션 전 세션 null 은 판정 보류(하드 리로드 오탈락 방지)
+    if (hydrated && !session) router.replace("/login");
+  }, [hydrated, session, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
