@@ -1,9 +1,9 @@
 /**
  * biz-web API 클라이언트. 백엔드는 NestJS 글로벌 프리픽스 `api` 포함 —
- * 기본값은 로컬 개발 백엔드, 배포 시 NEXT_PUBLIC_API_BASE_URL 로 교체.
+ * 기본값은 로컬 개발 백엔드, 배포 시 NEXT_PUBLIC_API_URL 로 교체.
+ * (next.config.ts 가 같은 env 의 origin 을 CSP connect-src 에 반영한다.)
  */
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 
 export class BizApiError extends Error {
   constructor(
