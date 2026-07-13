@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge, Button, FilterChip, ListRow } from "@/components/ui";
 import type { BadgeTone } from "@/components/ui";
 import {
@@ -501,6 +502,19 @@ function DetailPanel({
               고객 개인정보 보호를 위해 이름은 마스킹된 형태로만 제공됩니다.
             </div>
           </div>
+
+          {!reservation.hasLinkedTransaction &&
+            reservation.status !== "CANCELLED" &&
+            reservation.status !== "NO_SHOW" && (
+              <Link
+                href={`/transactions?reservationId=${reservation.id}${
+                  reservation.phone ? `&phone=${encodeURIComponent(reservation.phone)}` : ""
+                }`}
+                className="h-[52px] rounded-2xl bg-ink hover:bg-body text-white text-sm font-bold grid place-items-center"
+              >
+                거래 시작 — 현장 매입 등록
+              </Link>
+            )}
 
           {isTerminal ? (
             <div className="bg-surface border border-line rounded-2xl px-[18px] py-4 text-xs text-caption leading-relaxed">
