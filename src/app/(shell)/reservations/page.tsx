@@ -152,19 +152,23 @@ export default function ReservationsPage() {
     error?: string;
   } | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
-  const rangeMode = dateFilter === "today" ? "today" : "week";
-  const requestKey = `${rangeMode}:${reloadCount}`;
+  const [customRange, setCustomRange] = useState<{ from: string; to: string }>(() => weekRange());
+  const requestKey =
+    dateFilter === "custom"
+      ? `custom:${customRange.from}:${customRange.to}:${reloadCount}`
+      : `${dateFilter}:${reloadCount}`;
   const loading = result?.key !== requestKey;
   const reservations = (!loading && result?.reservations) || [];
   const loadError = !loading ? (result?.error ?? null) : null;
 
   useEffect(() => {
     let cancelled = false;
-    // 직접선택(custom)은 달력 연동 전까지 이번주와 동일 범위로 취급
     const range =
-      rangeMode === "today"
+      dateFilter === "today"
         ? { from: toDateString(kstToday()), to: toDateString(kstToday()) }
-        : weekRange();
+        : dateFilter === "custom"
+          ? customRange
+          : weekRange();
     void (async () => {
       try {
         const res = await bizApiFetch<{ reservations: ApiReservation[] }>(
@@ -187,7 +191,7 @@ export default function ReservationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [rangeMode, requestKey, token]);
+  }, [dateFilter, customRange, requestKey, token]);
 
   const visible = reservations.filter((r) =>
     statusFilter === "ALL" ? true : r.status === statusFilter,
@@ -254,7 +258,9 @@ export default function ReservationsPage() {
         <div>
           <h1 className="text-xl md:text-2xl font-extrabold tracking-tight m-0">예약</h1>
           <div className="text-sm text-caption mt-1.5">
-            {todayLabel} · KST · {dateFilter === "today" ? "오늘" : "이번주"} {reservations.length}건
+            {todayLabel} · KST ·{" "}
+            {dateFilter === "today" ? "오늘" : dateFilter === "week" ? "이번주" : "선택기간"}{" "}
+            {reservations.length}건
           </div>
         </div>
         <button
@@ -287,12 +293,40 @@ export default function ReservationsPage() {
             <DateToggle active={dateFilter === "week"} onClick={() => setDateFilter("week")}>
               이번주
             </DateToggle>
-            {/* TODO: 직접선택 날짜 범위 피커 — 현재는 이번주와 동일 범위 */}
             <DateToggle active={dateFilter === "custom"} onClick={() => setDateFilter("custom")}>
               <CalendarIcon className="w-3.5 h-3.5" />
               직접선택
             </DateToggle>
           </div>
+          {dateFilter === "custom" && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                aria-label="조회 시작일"
+                value={customRange.from}
+                max={customRange.to}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  setCustomRange((prev) => ({ from: v, to: v > prev.to ? v : prev.to }));
+                }}
+                className="h-8 px-2.5 rounded-lg bg-white border border-line text-xs font-semibold text-body focus:border-primary-light focus:outline-none"
+              />
+              <span className="text-xs text-caption">~</span>
+              <input
+                type="date"
+                aria-label="조회 종료일"
+                value={customRange.to}
+                min={customRange.from}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  setCustomRange((prev) => ({ from: v < prev.from ? v : prev.from, to: v }));
+                }}
+                className="h-8 px-2.5 rounded-lg bg-white border border-line text-xs font-semibold text-body focus:border-primary-light focus:outline-none"
+              />
+            </div>
+          )}
         </div>
       </div>
 
