@@ -23,6 +23,37 @@ type FetchOptions = {
   token?: string | null;
 };
 
+/**
+ * multipart 업로드(카탈로그 이미지 등) — Content-Type 을 지정하지 않아 브라우저가
+ * boundary 포함 multipart/form-data 를 자동 설정하게 둔다.
+ */
+export async function bizApiUpload<T>(
+  path: string,
+  formData: FormData,
+  token: string | null,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: formData,
+    });
+  } catch {
+    throw new BizApiError(0, "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
+  }
+  const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const body = data !== null && typeof data === "object" ? (data as Record<string, unknown>) : {};
+    const message =
+      typeof body.message === "string"
+        ? body.message
+        : "업로드에 실패했습니다. 잠시 후 다시 시도해주세요.";
+    throw new BizApiError(response.status, message);
+  }
+  return data as T;
+}
+
 export async function bizApiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { method = "GET", body, token } = options;
 

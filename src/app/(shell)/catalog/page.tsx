@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, FilterChip, Input } from "@/components/ui";
 import {
   AlertCircleIcon,
@@ -10,72 +10,29 @@ import {
   ImageIcon,
   PlusIcon,
 } from "@/components/icons";
+import { useBizSession } from "@/components/shell/BizSessionProvider";
+import { bizApiFetch, bizApiUpload, BizApiError } from "@/lib/api";
 
-type ApplicationStatus = "pending" | "approved" | "rejected";
-type ApplicationKind = "상품" | "서비스";
+type ApplicationStatus = "PENDING" | "APPROVED" | "REJECTED";
+type ApplicationKind = "PRODUCT" | "SERVICE";
 
-type CatalogApplication = {
+/** GET /biz/catalog 항목 — 서버가 imageUrls(공개 URL)까지 내려준다. */
+type ApiCatalogItem = {
   id: string;
-  name: string;
   kind: ApplicationKind;
-  appliedAt: string;
+  name: string;
   description: string;
+  priceMinKrw: number | null;
+  priceMaxKrw: number | null;
+  note: string | null;
+  imageKeys: string[];
+  imageUrls: string[];
   status: ApplicationStatus;
-  rejectReason?: string;
+  rejectReason: string | null;
+  createdAt: string;
 };
 
-const INITIAL_APPLICATIONS: CatalogApplication[] = [
-  {
-    id: "CAT-20260710-0007",
-    name: "수제 은수저 세트 (돌선물용)",
-    kind: "상품",
-    appliedAt: "7/10 신청",
-    description: "순은 99.9% 각인 서비스 포함, 제작 5일 소요.",
-    status: "pending",
-  },
-  {
-    id: "CAT-20260708-0006",
-    name: "돌반지 각인 서비스",
-    kind: "서비스",
-    appliedAt: "7/8 신청",
-    description: "구매 반지에 이름·날짜 레이저 각인, 당일 처리.",
-    status: "pending",
-  },
-  {
-    id: "CAT-20260701-0005",
-    name: "14K 커플링 맞춤 제작",
-    kind: "상품",
-    appliedAt: "7/1 신청",
-    description: "디자인 상담 후 2주 제작, 사이즈 교환 1회 무료.",
-    status: "approved",
-  },
-  {
-    id: "CAT-20260628-0004",
-    name: "18K 목걸이 리폼 서비스",
-    kind: "서비스",
-    appliedAt: "6/28 신청",
-    description: "끊어진 체인 복원·길이 조정, 도금 마감 포함.",
-    status: "approved",
-  },
-  {
-    id: "CAT-20260620-0003",
-    name: "순은 수저 답례품 세트",
-    kind: "상품",
-    appliedAt: "6/20 신청",
-    description: "돌·백일 답례용 케이스 포장, 10세트 이상 할인.",
-    status: "approved",
-  },
-  {
-    id: "CAT-20260612-0002",
-    name: "순금 골드바 소분 판매",
-    kind: "상품",
-    appliedAt: "6/12 신청",
-    description: "10g 단위 소분 판매 희망.",
-    status: "rejected",
-    rejectReason:
-      "시세 연동 중량 거래 품목은 카탈로그 대상이 아닙니다. 가공품으로 범위를 조정해 재신청해주세요.",
-  },
-];
+const KIND_LABEL: Record<ApplicationKind, string> = { PRODUCT: "상품", SERVICE: "서비스" };
 
 type FilterKey = "all" | ApplicationStatus;
 
@@ -83,10 +40,12 @@ const STATUS_META: Record<
   ApplicationStatus,
   { label: string; tone: "slate" | "green" | "red"; cardBorder: string; cardBg: string }
 > = {
-  pending: { label: "대기중", tone: "slate", cardBorder: "border-slate-300", cardBg: "bg-white" },
-  approved: { label: "승인", tone: "green", cardBorder: "border-green-200", cardBg: "bg-white" },
-  rejected: { label: "반려", tone: "red", cardBorder: "border-red-200", cardBg: "bg-red-50/40" },
+  PENDING: { label: "대기중", tone: "slate", cardBorder: "border-slate-300", cardBg: "bg-white" },
+  APPROVED: { label: "승인", tone: "green", cardBorder: "border-green-200", cardBg: "bg-white" },
+  REJECTED: { label: "반려", tone: "red", cardBorder: "border-red-200", cardBg: "bg-red-50/40" },
 };
+
+type UploadedImage = { key: string; url: string };
 
 type FormState = {
   kind: ApplicationKind;
@@ -98,7 +57,7 @@ type FormState = {
 };
 
 const EMPTY_FORM: FormState = {
-  kind: "상품",
+  kind: "PRODUCT",
   name: "",
   description: "",
   priceMin: "",
@@ -108,64 +67,126 @@ const EMPTY_FORM: FormState = {
 
 type View = "list" | "form" | "done";
 
+/** "180,000" → 180000. 빈/비정상 입력은 undefined(미지정). */
+function parseKrw(raw: string): number | undefined {
+  const n = Number(raw.replace(/[^0-9]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function appliedLabel(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} 신청`;
+}
+
 export default function CatalogPage() {
-  const [applications, setApplications] = useState<CatalogApplication[]>(INITIAL_APPLICATIONS);
+  const { token } = useBizSession();
+  const [items, setItems] = useState<ApiCatalogItem[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("list");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [images, setImages] = useState<number[]>([1]);
-  const [submitted, setSubmitted] = useState<CatalogApplication | null>(null);
+  const [images, setImages] = useState<UploadedImage[]>([]);
+  const [submitted, setSubmitted] = useState<ApiCatalogItem | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
+  // react-hooks/set-state-in-effect 룰 때문에 콜백 대신 effect 내 IIFE + reloadKey 재조회 패턴.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await bizApiFetch<{ items: ApiCatalogItem[] }>("/biz/catalog", { token });
+        if (!alive) return;
+        setItems(res.items);
+        setLoadError(null);
+      } catch (e) {
+        if (!alive) return;
+        setLoadError(e instanceof BizApiError ? e.message : "신청 목록을 불러오지 못했습니다.");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token, reloadKey]);
+
+  const list = items ?? [];
   const counts = {
-    all: applications.length,
-    pending: applications.filter((a) => a.status === "pending").length,
-    approved: applications.filter((a) => a.status === "approved").length,
-    rejected: applications.filter((a) => a.status === "rejected").length,
+    all: list.length,
+    PENDING: list.filter((a) => a.status === "PENDING").length,
+    APPROVED: list.filter((a) => a.status === "APPROVED").length,
+    REJECTED: list.filter((a) => a.status === "REJECTED").length,
   };
 
-  const visible = filter === "all" ? applications : applications.filter((a) => a.status === filter);
+  const visible = filter === "all" ? list : list.filter((a) => a.status === filter);
 
   function openNewForm() {
     setForm(EMPTY_FORM);
-    setImages([1]);
+    setImages([]);
+    setFormError(null);
     setView("form");
   }
 
-  function openReapplyForm(app: CatalogApplication) {
+  function openReapplyForm(app: ApiCatalogItem) {
     setForm({
       kind: app.kind,
       name: app.name,
       description: app.description,
-      priceMin: "",
-      priceMax: "",
+      priceMin: app.priceMinKrw !== null ? String(app.priceMinKrw) : "",
+      priceMax: app.priceMaxKrw !== null ? String(app.priceMaxKrw) : "",
       note: "",
     });
-    setImages([1]);
+    // 반려 건의 기존 이미지 키는 자기 매장 소유라 재사용 가능.
+    setImages(app.imageKeys.map((key, i) => ({ key, url: app.imageUrls[i] ?? "" })));
+    setFormError(null);
     setView("form");
   }
 
-  function submitForm() {
-    // TODO(API 연동): POST /biz/catalog-applications — 승인 대기 상태로 접수
-    const now = new Date();
-    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-      now.getDate(),
-    ).padStart(2, "0")}`;
-    const seq = String(counts.all + 1).padStart(4, "0");
-    const created: CatalogApplication = {
-      id: `CAT-${stamp}-${seq}`,
-      name: form.name.trim() || "무제 신청",
-      kind: form.kind,
-      appliedAt: `${now.getMonth() + 1}/${now.getDate()} 신청`,
-      description: form.description.trim(),
-      status: "pending",
-    };
-    setApplications((prev) => [created, ...prev]);
-    setSubmitted(created);
-    setView("done");
+  async function submitForm() {
+    if (!token || submitting) return;
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const created = await bizApiFetch<ApiCatalogItem>("/biz/catalog", {
+        method: "POST",
+        token,
+        body: {
+          kind: form.kind,
+          name: form.name.trim(),
+          description: form.description.trim(),
+          priceMinKrw: parseKrw(form.priceMin),
+          priceMaxKrw: parseKrw(form.priceMax),
+          note: form.note.trim() || undefined,
+          imageKeys: images.map((img) => img.key),
+        },
+      });
+      setSubmitted(created);
+      setView("done");
+      reload();
+    } catch (e) {
+      setFormError(e instanceof BizApiError ? e.message : "신청 접수에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (view === "form") {
-    return <ApplicationForm form={form} setForm={setForm} images={images} setImages={setImages} onSubmit={submitForm} onCancel={() => setView("list")} />;
+    return (
+      <ApplicationForm
+        form={form}
+        setForm={setForm}
+        images={images}
+        setImages={setImages}
+        token={token}
+        submitting={submitting}
+        error={formError}
+        onSubmit={() => void submitForm()}
+        onCancel={() => setView("list")}
+      />
+    );
   }
 
   if (view === "done" && submitted) {
@@ -197,18 +218,32 @@ export default function CatalogPage() {
         <FilterChip active={filter === "all"} onClick={() => setFilter("all")}>
           전체 {counts.all}
         </FilterChip>
-        <FilterChip active={filter === "pending"} onClick={() => setFilter("pending")}>
-          대기중 {counts.pending}
+        <FilterChip active={filter === "PENDING"} onClick={() => setFilter("PENDING")}>
+          대기중 {counts.PENDING}
         </FilterChip>
-        <FilterChip active={filter === "approved"} onClick={() => setFilter("approved")}>
-          승인 {counts.approved}
+        <FilterChip active={filter === "APPROVED"} onClick={() => setFilter("APPROVED")}>
+          승인 {counts.APPROVED}
         </FilterChip>
-        <FilterChip active={filter === "rejected"} onClick={() => setFilter("rejected")}>
-          반려 {counts.rejected}
+        <FilterChip active={filter === "REJECTED"} onClick={() => setFilter("REJECTED")}>
+          반려 {counts.REJECTED}
         </FilterChip>
       </div>
 
-      {visible.length === 0 ? (
+      {loadError ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex gap-2 items-center text-sm text-red-700">
+          <AlertCircleIcon className="w-4 h-4 shrink-0" />
+          {loadError}
+          <button onClick={reload} className="ml-auto text-xs font-bold underline">
+            다시 시도
+          </button>
+        </div>
+      ) : items === null ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-36 rounded-3xl bg-slate-100 animate-pulse" />
+          ))}
+        </div>
+      ) : visible.length === 0 ? (
         <EmptyState onNew={openNewForm} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 items-start">
@@ -226,21 +261,27 @@ function ApplicationCard({
   app,
   onReapply,
 }: {
-  app: CatalogApplication;
+  app: ApiCatalogItem;
   onReapply: () => void;
 }) {
   const meta = STATUS_META[app.status];
+  const thumb = app.imageUrls[0];
   return (
-    <div className={`${meta.cardBg} border-2 ${meta.cardBorder} rounded-3xl p-[18px] flex flex-col gap-3`}>
+    <div className={`${app.status === "REJECTED" ? "bg-red-50/40" : "bg-white"} border-2 ${meta.cardBorder} rounded-3xl p-[18px] flex flex-col gap-3`}>
       <div className="flex items-start justify-between gap-2.5">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 rounded-2xl bg-white border border-line grid place-items-center text-caption shrink-0">
-            <ImageIcon className="w-5 h-5" />
+          <div className="w-11 h-11 rounded-2xl bg-white border border-line grid place-items-center text-caption shrink-0 overflow-hidden">
+            {thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element -- R2 공개 URL, next/image 도메인 설정 없이 직결
+              <img src={thumb} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon className="w-5 h-5" />
+            )}
           </div>
           <div className="min-w-0">
             <div className="text-sm font-extrabold truncate">{app.name}</div>
             <div className="text-xs text-caption">
-              {app.kind} · {app.appliedAt}
+              {KIND_LABEL[app.kind]} · {appliedLabel(app.createdAt)}
             </div>
           </div>
         </div>
@@ -249,7 +290,7 @@ function ApplicationCard({
         </Badge>
       </div>
       <div className="text-sm text-body leading-relaxed">{app.description}</div>
-      {app.status === "rejected" && app.rejectReason && (
+      {app.status === "REJECTED" && app.rejectReason && (
         <>
           <div className="bg-white border border-red-200 rounded-xl px-3.5 py-3 flex gap-2 items-start">
             <AlertCircleIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600" />
@@ -275,17 +316,44 @@ function ApplicationForm({
   setForm,
   images,
   setImages,
+  token,
+  submitting,
+  error,
   onSubmit,
   onCancel,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  images: number[];
-  setImages: React.Dispatch<React.SetStateAction<number[]>>;
+  images: UploadedImage[];
+  setImages: React.Dispatch<React.SetStateAction<UploadedImage[]>>;
+  token: string | null;
+  submitting: boolean;
+  error: string | null;
   onSubmit: () => void;
   onCancel: () => void;
 }) {
-  const canSubmit = form.name.trim().length > 0 && form.description.trim().length > 0;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const canSubmit =
+    form.name.trim().length > 0 && form.description.trim().length > 0 && !submitting && !uploading;
+
+  async function handleFile(file: File) {
+    if (!token) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await bizApiUpload<UploadedImage>("/biz/catalog/images", fd, token);
+      setImages((prev) => [...prev, res]);
+    } catch (e) {
+      setUploadError(e instanceof BizApiError ? e.message : "이미지 업로드에 실패했습니다.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <>
@@ -306,7 +374,7 @@ function ApplicationForm({
               유형 <span className="text-primary">*</span>
             </label>
             <div className="flex gap-2">
-              {(["상품", "서비스"] as const).map((kind) => {
+              {(["PRODUCT", "SERVICE"] as const).map((kind) => {
                 const active = form.kind === kind;
                 return (
                   <button
@@ -318,7 +386,7 @@ function ApplicationForm({
                         : "border border-line bg-white hover:border-primary-light text-body font-semibold"
                     }`}
                   >
-                    {kind}
+                    {KIND_LABEL[kind]}
                   </button>
                 );
               })}
@@ -351,20 +419,35 @@ function ApplicationForm({
 
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-body">
-              이미지 <span className="text-caption font-medium">(최대 5장)</span>
+              이미지 <span className="text-caption font-medium">(최대 5장, 10MB 이하)</span>
             </label>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleFile(file);
+                e.target.value = "";
+              }}
+            />
             <div className="flex gap-2.5 flex-wrap">
-              {/* TODO(API 연동): 실제 파일 업로더(R2 presign)로 교체 — 지금은 placeholder */}
-              {images.map((id) => (
+              {images.map((img) => (
                 <div
-                  key={id}
-                  className="relative w-24 h-24 rounded-2xl bg-slate-100 border border-line grid place-items-center text-slate-400"
+                  key={img.key}
+                  className="relative w-24 h-24 rounded-2xl bg-slate-100 border border-line grid place-items-center text-slate-400 overflow-hidden"
                 >
-                  <ImageIcon className="w-7 h-7" />
+                  {img.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- R2 공개 URL 직결
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon className="w-7 h-7" />
+                  )}
                   <button
                     aria-label="이미지 삭제"
-                    onClick={() => setImages((prev) => prev.filter((x) => x !== id))}
-                    className="absolute -top-2 -right-2 w-[22px] h-[22px] rounded-full bg-ink text-white grid place-items-center text-[11px]"
+                    onClick={() => setImages((prev) => prev.filter((x) => x.key !== img.key))}
+                    className="absolute top-1 right-1 w-[22px] h-[22px] rounded-full bg-ink text-white grid place-items-center text-[11px]"
                   >
                     ✕
                   </button>
@@ -372,14 +455,18 @@ function ApplicationForm({
               ))}
               {images.length < 5 && (
                 <button
-                  onClick={() => setImages((prev) => [...prev, (prev.at(-1) ?? 0) + 1])}
-                  className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-300 bg-surface hover:border-primary-light hover:text-primary text-caption text-xs font-semibold flex flex-col items-center justify-center gap-1 transition"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-300 bg-surface hover:border-primary-light hover:text-primary text-caption text-xs font-semibold flex flex-col items-center justify-center gap-1 transition disabled:opacity-50"
                 >
                   <PlusIcon className="w-5 h-5" />
-                  추가
+                  {uploading ? "업로드 중…" : "추가"}
                 </button>
               )}
             </div>
+            {uploadError ? (
+              <div className="text-xs text-red-600 font-semibold">{uploadError}</div>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -419,12 +506,19 @@ function ApplicationForm({
             />
           </div>
 
+          {error ? (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3.5 py-3 flex gap-2 items-center text-sm text-red-700">
+              <AlertCircleIcon className="w-4 h-4 shrink-0" />
+              {error}
+            </div>
+          ) : null}
+
           <Button
             onClick={onSubmit}
             disabled={!canSubmit}
             className="h-14 rounded-2xl text-base shadow-primary/25"
           >
-            신청 제출
+            {submitting ? "제출 중…" : "신청 제출"}
           </Button>
         </section>
 
@@ -455,7 +549,7 @@ function SubmissionDone({
   onBackToList,
   onApplyAnother,
 }: {
-  application: CatalogApplication;
+  application: ApiCatalogItem;
   onBackToList: () => void;
   onApplyAnother: () => void;
 }) {
@@ -476,7 +570,9 @@ function SubmissionDone({
         <div className="w-full bg-surface border border-line rounded-2xl p-[18px] flex flex-col gap-2.5 text-left">
           <div className="flex justify-between gap-3">
             <span className="text-xs text-caption">신청번호</span>
-            <span className="text-sm font-extrabold text-primary tabular-nums">{application.id}</span>
+            <span className="text-sm font-extrabold text-primary tabular-nums">
+              {application.id.slice(0, 8).toUpperCase()}
+            </span>
           </div>
           <div className="flex justify-between gap-3">
             <span className="text-xs text-caption">항목</span>

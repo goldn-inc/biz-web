@@ -1,31 +1,117 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon } from "@/components/icons";
+import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon } from "@/components/icons";
 import { Badge } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
+import { bizApiFetch } from "@/lib/api";
 import { isWholesaleTier, tierLabel } from "@/lib/session";
 
-const TODAY_RESERVATIONS = [
-  { time: "11:00", name: "김민지", memo: "예물 반지 상담 · 방문 예약", status: "CONFIRMED" as const },
-  { time: "14:30", name: "박성호", memo: "금 시세 매입 문의", status: "PENDING" as const },
-  { time: "16:00", name: "이수연", memo: "돌반지 3.75g 구매 예약", status: "CONFIRMED" as const },
-];
+type ReservationStatus = "PENDING" | "WAITLISTED" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 
-const RECENT_TRANSACTIONS = [
-  { type: "매입" as const, title: "14K 목걸이 18.2g 매입", time: "오늘 14:20", amount: "1,243,000원" },
-  { type: "감정" as const, title: "18K 반지 감정 (2점)", time: "오늘 11:05", amount: "30,000원" },
-  { type: "매입" as const, title: "순금 골드바 10g 매입", time: "오늘 10:12", amount: "983,000원" },
-];
+/** GET /biz/reservations 항목(기본 = KST 오늘). customerName 은 서버 마스킹 완료값. */
+type ApiReservation = {
+  id: string;
+  visitSlot: string | null;
+  purpose: string | null;
+  status: ReservationStatus;
+  customerName: string;
+};
 
-const RECENT_WHOLESALE_ORDERS = [
-  { code: "WO-2607", title: "순금 골드바 37.5g 외 2건", date: "7월 9일 주문", status: "배송중", tone: "blue" as const },
-  { code: "WO-2601", title: "14K 체인 목걸이 10점", date: "7월 7일 주문", status: "승인 대기", tone: "amber" as const },
-];
+type TxStatus = "IN_PROGRESS" | "COMPLETED" | "CANCELED";
+
+/** GET /biz/transactions 항목(기본 = KST 오늘). */
+type ApiTransaction = {
+  id: string;
+  status: TxStatus;
+  customerName: string;
+  finalPrice: number | null;
+  createdAt: string;
+};
+
+type OrderStatus = "REQUESTED" | "CONFIRMED" | "COMPLETED" | "CANCELED";
+
+/** GET /biz/wholesale/orders 항목. */
+type ApiOrder = {
+  id: string;
+  productName: string;
+  quantity: number;
+  status: OrderStatus;
+  createdAt: string;
+};
+
+const RESERVATION_BADGE: Partial<Record<ReservationStatus, { label: string; tone: "green" | "amber" | "slate" | "violet" }>> = {
+  PENDING: { label: "대기중", tone: "amber" },
+  WAITLISTED: { label: "대기목록", tone: "violet" },
+  CONFIRMED: { label: "확정", tone: "green" },
+  COMPLETED: { label: "방문완료", tone: "slate" },
+};
+
+const ORDER_BADGE: Record<OrderStatus, { label: string; tone: "slate" | "blue" | "green" }> = {
+  REQUESTED: { label: "요청됨", tone: "slate" },
+  CONFIRMED: { label: "확인됨", tone: "blue" },
+  COMPLETED: { label: "완료", tone: "green" },
+  CANCELED: { label: "취소", tone: "slate" },
+};
+
+const TX_BADGE: Record<TxStatus, { label: string; cls: string }> = {
+  IN_PROGRESS: { label: "진행중", cls: "text-blue-600 bg-blue-50 border-blue-200" },
+  COMPLETED: { label: "매입", cls: "text-primary bg-orange-50 border-orange-100" },
+  CANCELED: { label: "취소", cls: "text-slate-500 bg-slate-50 border-slate-200" },
+};
+
+function won(n: number): string {
+  return `${n.toLocaleString("ko-KR")}원`;
+}
+
+function timeLabel(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 export default function DashboardPage() {
-  const { account: session } = useBizSession();
+  const { account: session, token } = useBizSession();
   const wholesale = isWholesaleTier(session.tier);
+
+  const [reservations, setReservations] = useState<ApiReservation[] | null>(null);
+  const [transactions, setTransactions] = useState<ApiTransaction[] | null>(null);
+  const [orders, setOrders] = useState<ApiOrder[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const [resv, tx, ord] = await Promise.all([
+          bizApiFetch<{ reservations: ApiReservation[] }>("/biz/reservations", { token }),
+          bizApiFetch<{ transactions: ApiTransaction[] }>("/biz/transactions", { token }),
+          wholesale
+            ? bizApiFetch<{ orders: ApiOrder[] }>("/biz/wholesale/orders", { token })
+            : Promise.resolve({ orders: [] as ApiOrder[] }),
+        ]);
+        if (!alive) return;
+        setReservations(resv.reservations);
+        setTransactions(tx.transactions);
+        setOrders(ord.orders);
+        setError(null);
+      } catch {
+        if (!alive) return;
+        setError("대시보드 데이터를 불러오지 못했습니다. 새로고침 해주세요.");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token, wholesale]);
+
+  // 종결(취소·노쇼) 예약은 오늘 카드에서 제외 — 현장 응대 대상만.
+  const todayReservations = (reservations ?? []).filter(
+    (r) => r.status !== "CANCELLED" && r.status !== "NO_SHOW",
+  );
+  const activeTx = (transactions ?? []).filter((t) => t.status !== "CANCELED");
+  const recentOrders = (orders ?? []).slice(0, 3);
 
   return (
     <>
@@ -42,9 +128,15 @@ export default function DashboardPage() {
           className="relative w-11 h-11 rounded-2xl bg-white border border-line grid place-items-center text-body hover:text-primary hover:border-primary-light shrink-0"
         >
           <BellIcon className="w-5 h-5" />
-          <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-primary ring-2 ring-white" />
         </button>
       </div>
+
+      {error ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex gap-2 items-center text-sm text-red-700">
+          <AlertCircleIcon className="w-4 h-4 shrink-0" />
+          {error}
+        </div>
+      ) : null}
 
       <div className="flex gap-2.5 flex-wrap">
         <Link
@@ -95,41 +187,46 @@ export default function DashboardPage() {
             <div className="flex-1 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
               <div className="text-xs font-semibold text-amber-800">대기중</div>
               <div className="text-2xl font-extrabold text-amber-700">
-                {TODAY_RESERVATIONS.filter((r) => r.status === "PENDING").length}
+                {todayReservations.filter((r) => r.status === "PENDING" || r.status === "WAITLISTED").length}
                 <span className="text-sm font-semibold">건</span>
               </div>
             </div>
             <div className="flex-1 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
               <div className="text-xs font-semibold text-green-800">확정</div>
               <div className="text-2xl font-extrabold text-green-600">
-                {TODAY_RESERVATIONS.filter((r) => r.status === "CONFIRMED").length}
+                {todayReservations.filter((r) => r.status === "CONFIRMED").length}
                 <span className="text-sm font-semibold">건</span>
               </div>
             </div>
           </div>
-          {TODAY_RESERVATIONS.length === 0 ? (
+          {reservations === null ? (
+            <LoadingRows />
+          ) : todayReservations.length === 0 ? (
             <EmptyState icon={<CalendarIcon className="w-6 h-6" />} title="오늘 예약이 없습니다" desc="고객이 앱에서 예약하면 실시간으로 표시됩니다." />
           ) : (
             <div className="flex flex-col">
-              {TODAY_RESERVATIONS.map((r) => (
-                <div key={r.time + r.name} className="flex items-center gap-3.5 py-3 border-t border-slate-100">
-                  <div className="text-sm font-extrabold w-12 shrink-0">{r.time}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate">{r.name}</div>
-                    <div className="text-xs text-caption truncate">{r.memo}</div>
+              {todayReservations.map((r) => {
+                const badge = RESERVATION_BADGE[r.status] ?? { label: r.status, tone: "slate" as const };
+                return (
+                  <div key={r.id} className="flex items-center gap-3.5 py-3 border-t border-slate-100">
+                    <div className="text-sm font-extrabold w-12 shrink-0">{r.visitSlot ?? "—"}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{r.customerName}</div>
+                      <div className="text-xs text-caption truncate">{r.purpose ?? "방문 예약"}</div>
+                    </div>
+                    <Badge tone={badge.tone} className="shrink-0">
+                      {badge.label}
+                    </Badge>
                   </div>
-                  <Badge tone={r.status === "CONFIRMED" ? "green" : "amber"} className="shrink-0">
-                    {r.status === "CONFIRMED" ? "확정" : "대기중"}
-                  </Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
 
         <section className="bg-white border border-line rounded-3xl shadow-sm p-5 md:p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold m-0">최근 거래</h2>
+            <h2 className="text-base font-bold m-0">오늘의 거래</h2>
             <Link
               href="/transactions"
               className="inline-flex items-center gap-1 text-primary text-sm font-semibold px-2 py-1.5 rounded-lg hover:bg-orange-50"
@@ -141,30 +238,32 @@ export default function DashboardPage() {
           <div className="bg-surface border border-line rounded-2xl px-4 py-3 flex items-baseline gap-2">
             <div className="text-xs font-semibold text-caption">오늘 처리</div>
             <div className="text-2xl font-extrabold">
-              {RECENT_TRANSACTIONS.length}
+              {activeTx.length}
               <span className="text-sm font-semibold">건</span>
             </div>
           </div>
-          <div className="flex flex-col">
-            {RECENT_TRANSACTIONS.map((t, i) => (
-              <div key={i} className="flex items-center gap-3 py-3 border-t border-slate-100">
-                <span
-                  className={`shrink-0 text-xs font-bold rounded-lg px-2 py-1 border ${
-                    t.type === "매입"
-                      ? "text-primary bg-orange-50 border-orange-100"
-                      : "text-blue-600 bg-blue-50 border-blue-200"
-                  }`}
-                >
-                  {t.type}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">{t.title}</div>
-                  <div className="text-xs text-caption">{t.time}</div>
+          {transactions === null ? (
+            <LoadingRows />
+          ) : activeTx.length === 0 ? (
+            <EmptyState icon={<PlusIcon className="w-6 h-6" />} title="오늘 거래가 없습니다" desc="현장 매입 등록으로 첫 거래를 시작하세요." />
+          ) : (
+            <div className="flex flex-col">
+              {activeTx.slice(0, 4).map((t) => (
+                <div key={t.id} className="flex items-center gap-3 py-3 border-t border-slate-100">
+                  <span className={`shrink-0 text-xs font-bold rounded-lg px-2 py-1 border ${TX_BADGE[t.status].cls}`}>
+                    {TX_BADGE[t.status].label}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{t.customerName}</div>
+                    <div className="text-xs text-caption">오늘 {timeLabel(t.createdAt)}</div>
+                  </div>
+                  <div className="shrink-0 text-sm font-extrabold tabular-nums">
+                    {t.finalPrice !== null ? won(t.finalPrice) : "진행중"}
+                  </div>
                 </div>
-                <div className="shrink-0 text-sm font-extrabold tabular-nums">{t.amount}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {wholesale && (
@@ -184,24 +283,44 @@ export default function DashboardPage() {
                 <ChevronRightIcon className="w-3.5 h-3.5" />
               </Link>
             </div>
-            <div className="flex flex-col">
-              {RECENT_WHOLESALE_ORDERS.map((o) => (
-                <div key={o.code} className="flex items-center gap-3 py-3 border-t border-slate-100">
-                  <div className="shrink-0 text-sm font-bold text-caption tabular-nums">{o.code}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate">{o.title}</div>
-                    <div className="text-xs text-caption">{o.date}</div>
+            {orders === null ? (
+              <LoadingRows />
+            ) : recentOrders.length === 0 ? (
+              <EmptyState icon={<WholesaleIcon className="w-6 h-6" />} title="도매 주문이 없습니다" desc="도매 주문에서 카탈로그를 확인해보세요." />
+            ) : (
+              <div className="flex flex-col">
+                {recentOrders.map((o) => (
+                  <div key={o.id} className="flex items-center gap-3 py-3 border-t border-slate-100">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">
+                        {o.productName} · {o.quantity}점
+                      </div>
+                      <div className="text-xs text-caption">
+                        {new Date(o.createdAt).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })} 주문
+                      </div>
+                    </div>
+                    <Badge tone={ORDER_BADGE[o.status].tone} className="shrink-0">
+                      {ORDER_BADGE[o.status].label}
+                    </Badge>
                   </div>
-                  <Badge tone={o.tone} className="shrink-0">
-                    {o.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>
     </>
+  );
+}
+
+/** 로딩 스켈레톤 — 카드 형태 유지용 3행. */
+function LoadingRows() {
+  return (
+    <div className="flex flex-col gap-3 py-2">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="h-10 rounded-xl bg-slate-100 animate-pulse" />
+      ))}
+    </div>
   );
 }
 
