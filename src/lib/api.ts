@@ -9,6 +9,8 @@ export class BizApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** 쿠폰 검증 등 표준 사유 코드(백엔드 4.2.2 규약) — 없으면 undefined */
+    public readonly reason?: string,
   ) {
     super(message);
     this.name = "BizApiError";
@@ -40,14 +42,13 @@ export async function bizApiFetch<T>(path: string, options: FetchOptions = {}): 
 
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) {
+    const body = data !== null && typeof data === "object" ? (data as Record<string, unknown>) : {};
     const message =
-      data !== null &&
-      typeof data === "object" &&
-      "message" in data &&
-      typeof (data as { message: unknown }).message === "string"
-        ? (data as { message: string }).message
+      typeof body.message === "string"
+        ? body.message
         : "요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.";
-    throw new BizApiError(response.status, message);
+    const reason = typeof body.reason === "string" ? body.reason : undefined;
+    throw new BizApiError(response.status, message, reason);
   }
   return data as T;
 }

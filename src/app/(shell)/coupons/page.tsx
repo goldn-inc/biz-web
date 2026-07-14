@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   CouponTagIcon,
   QrIcon,
@@ -9,170 +10,185 @@ import {
   AlertTriangleIcon,
   CheckIcon,
 } from "@/components/icons";
+import { useBizSession } from "@/components/shell/BizSessionProvider";
+import { bizApiFetch, BizApiError } from "@/lib/api";
+import {
+  type ApiCouponSummary,
+  type CouponVerifyReason,
+  COUPON_REASON_LABELS,
+  couponConditionLabel,
+  couponDiscountLabel,
+  krwLabel,
+  maskedPhoneMatches,
+} from "@/lib/coupon";
 
-type CouponResult = "valid" | "used" | "expired";
-
-type UsedInfo = { at: string; store: string; trx: string };
-
-type Coupon = {
-  code: string;
-  name: string;
-  result: CouponResult;
-  issuedCustomer: string;
-  issuedPhone: string;
-  discountLabel: string;
-  discountSub: string;
-  usedInfo?: UsedInfo;
-  reason?: string;
-  reasonSub?: string;
+/** POST /biz/coupons/verify 응답 */
+type ApiVerifyResult = {
+  result: CouponVerifyReason;
+  coupon: ApiCouponSummary | null;
+  usedInfo?: { usedAt: string; storeName: string | null; sellRequestId: string | null } | null;
 };
 
-type OpenTransaction = {
+/** GET /biz/transactions 응답 항목 중 쿠폰 적용에 필요한 필드만 */
+type ApiOpenTransaction = {
   id: string;
-  customer: string;
-  stage: string;
-  time: string;
-  item: string;
-  issuedMatch: boolean;
+  status: "IN_PROGRESS" | "COMPLETED" | "CANCELED";
+  customerName: string;
+  customerPhone: string | null;
+  memo: string | null;
+  createdAt: string;
 };
 
-type HistoryEntry = {
+/** GET /biz/coupons/recent 응답 항목 */
+type ApiRecentEntry = {
+  couponId: string;
   name: string;
-  meta: string;
-  amount: string;
+  customerName: string | null;
+  benefitAmountKrw: number;
+  sellRequestId: string;
+  usedAt: string;
 };
-
-type AppliedReceipt = {
-  couponName: string;
-  discount: string;
-  trxLabel: string;
-};
-
-const NOW_LABEL = "2026년 7월 10일 (금) · KST · 고객 앱 발급 쿠폰 조회·검증";
-const APPLIED_LABEL = "2026년 7월 10일 (금) 16:05 KST";
-
-// TODO(API 연동): 실제로는 POST /coupons/verify 로 코드/QR 페이로드를 검증한다. 지금은 이식 단계라 샘플 쿠폰을 코드로 매핑한다.
-const SAMPLE_COUPONS: Coupon[] = [
-  {
-    code: "GS-7A2K-M9Q4",
-    name: "7월 골드 매입 감사 쿠폰",
-    result: "valid",
-    issuedCustomer: "김○지",
-    issuedPhone: "010-****-5678",
-    discountLabel: "30,000원 할인",
-    discountSub: "정액 · 2026-07-31까지",
-  },
-  {
-    code: "GS-3F8B-K2P7",
-    name: "첫 방문 감정비 무료 쿠폰",
-    result: "used",
-    issuedCustomer: "박○호",
-    issuedPhone: "010-****-2214",
-    discountLabel: "감정비 무료",
-    discountSub: "정액 · 2026-07-31까지",
-    usedInfo: {
-      at: "2026-07-03 (금) 14:22 KST",
-      store: "종로 골드스타 (본 매장)",
-      trx: "TRX-20260703-0011",
-    },
-  },
-  {
-    code: "GS-9C1D-X5R2",
-    name: "6월 은 매입 10% 할인 쿠폰",
-    result: "expired",
-    issuedCustomer: "이○연",
-    issuedPhone: "010-****-9931",
-    discountLabel: "정률 10%",
-    discountSub: "최대 50,000원",
-    reason: "유효기한 만료 — 2026-06-30까지 사용 가능",
-    reasonSub: "그 외 사유(해당 매장 미적용, 최소 거래금액 미달 등)도 동일한 형식으로 표시됩니다.",
-  },
-];
-
-// TODO(API 연동): 진행 중 거래는 GET /transactions?stage=open 으로 조회한다. issuedMatch 는 쿠폰 발급 고객과 거래 고객 일치 여부.
-const OPEN_TRANSACTIONS: OpenTransaction[] = [
-  {
-    id: "TRX-0027",
-    customer: "김○지",
-    stage: "접수",
-    time: "오늘 15:42",
-    item: "14K 추정 목걸이 1점",
-    issuedMatch: true,
-  },
-  {
-    id: "TRX-0026",
-    customer: "박○호",
-    stage: "감정중",
-    time: "오늘 14:10",
-    item: "18K 팔찌",
-    issuedMatch: false,
-  },
-];
-
-const INITIAL_HISTORY: HistoryEntry[] = [
-  { name: "7월 골드 매입 감사 쿠폰", meta: "김○지 · 오늘 16:05 · TRX-0027", amount: "-30,000원" },
-  { name: "감정비 무료 쿠폰", meta: "정○민 · 어제 15:40 · TRX-0019", amount: "-15,000원" },
-  { name: "은 매입 10% 할인", meta: "한○울 · 7/8 13:22 · TRX-0014", amount: "-42,300원" },
-];
 
 type ViewState = "idle" | "loading" | "result" | "applied";
 
+type AppliedReceipt = {
+  couponName: string;
+  discountLabel: string;
+  trxLabel: string;
+};
+
+/** KST 기준 헤더 라벨 — 예: 2026년 7월 13일 (월) */
+function kstDateLabel(): string {
+  const kst = new Date(Date.now() + 9 * 3600_000);
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  return `${kst.getUTCFullYear()}년 ${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 (${weekdays[kst.getUTCDay()]})`;
+}
+
+/** UTC ISO → KST M/D HH:MM */
+function kstTimeLabel(iso: string): string {
+  const kst = new Date(new Date(iso).getTime() + 9 * 3600_000);
+  const hhmm = `${String(kst.getUTCHours()).padStart(2, "0")}:${String(kst.getUTCMinutes()).padStart(2, "0")}`;
+  return `${kst.getUTCMonth() + 1}/${kst.getUTCDate()} ${hhmm}`;
+}
+
+/** 최근 7일 범위 — 진행중 거래 조회용(YYYY-MM-DD) */
+function weekRange(): { from: string; to: string } {
+  const kstNow = Date.now() + 9 * 3600_000;
+  const to = new Date(kstNow).toISOString().slice(0, 10);
+  const from = new Date(kstNow - 6 * 86400_000).toISOString().slice(0, 10);
+  return { from, to };
+}
+
+/** 고객 앱 발급 쿠폰 조회·검증·거래 적용 — 사업자용 쿠폰 화면 */
 export default function CouponsPage() {
+  const { token } = useBizSession();
+
   const [code, setCode] = useState("");
   const [view, setView] = useState<ViewState>("idle");
-  const [coupon, setCoupon] = useState<Coupon | null>(null);
-  const [selectedTxId, setSelectedTxId] = useState<string>(OPEN_TRANSACTIONS[0].id);
+  const [verify, setVerify] = useState<ApiVerifyResult | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
   const [receipt, setReceipt] = useState<AppliedReceipt | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>(INITIAL_HISTORY);
-  const [notFound, setNotFound] = useState(false);
 
-  function lookup(rawCode: string) {
+  const [openTxs, setOpenTxs] = useState<ApiOpenTransaction[] | null>(null);
+  const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
+
+  const [historyReload, setHistoryReload] = useState(0);
+  const [history, setHistory] = useState<ApiRecentEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await bizApiFetch<{ entries: ApiRecentEntry[] }>("/biz/coupons/recent", {
+          token,
+        });
+        if (!cancelled) {
+          setHistory(res.entries);
+          setHistoryError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setHistoryError(
+            error instanceof BizApiError ? error.message : "이력을 불러오지 못했습니다.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, historyReload]);
+
+  async function lookup(rawCode: string) {
     const normalized = rawCode.trim().toUpperCase();
     if (!normalized) return;
     setView("loading");
-    setNotFound(false);
-    // TODO(API 연동): 검증 요청을 실제 백엔드로 보낸다. 여기서는 조회 로딩만 흉내낸다.
-    window.setTimeout(() => {
-      const match = SAMPLE_COUPONS.find((c) => c.code === normalized);
-      if (!match) {
-        setCoupon(null);
-        setNotFound(true);
-        setView("result");
-        return;
-      }
-      setCoupon(match);
-      setSelectedTxId(OPEN_TRANSACTIONS[0].id);
+    setApplyError(null);
+    setOpenTxs(null);
+    setSelectedTxId(null);
+    try {
+      const res = await bizApiFetch<ApiVerifyResult>("/biz/coupons/verify", {
+        method: "POST",
+        body: { code: normalized },
+        token,
+      });
+      setVerify(res);
       setView("result");
-    }, 600);
+      if (res.result === "VALID") {
+        const { from, to } = weekRange();
+        const list = await bizApiFetch<{ transactions: ApiOpenTransaction[] }>(
+          `/biz/transactions?from=${from}&to=${to}&status=IN_PROGRESS`,
+          { token },
+        );
+        setOpenTxs(list.transactions);
+        setSelectedTxId(list.transactions[0]?.id ?? null);
+      }
+    } catch (error) {
+      setVerify({ result: "NOT_FOUND", coupon: null });
+      setApplyError(
+        error instanceof BizApiError ? error.message : "쿠폰을 조회하지 못했습니다.",
+      );
+      setView("result");
+    }
   }
 
-  function handleQrScan() {
-    // TODO(API 연동): QR 스캐너(카메라) 연동. 지금은 UI affordance만 — 유효 샘플 쿠폰을 조회한다.
-    setCode("GS-7A2K-M9Q4");
-    lookup("GS-7A2K-M9Q4");
-  }
-
-  function applyToTransaction() {
-    if (!coupon || coupon.result !== "valid") return;
-    const tx = OPEN_TRANSACTIONS.find((t) => t.id === selectedTxId) ?? OPEN_TRANSACTIONS[0];
-    // TODO(API 연동): POST /transactions/:id/coupons 로 쿠폰을 거래에 적용(정산 시 차감).
-    setReceipt({
-      couponName: coupon.name,
-      discount: coupon.discountLabel,
-      trxLabel: `${tx.id} · ${tx.customer} · ${tx.stage}`,
-    });
-    setHistory((prev) => [
-      { name: coupon.name, meta: `${tx.customer} · 방금 · ${tx.id}`, amount: `-${coupon.discountLabel.replace(" 할인", "")}` },
-      ...prev,
-    ]);
-    setView("applied");
+  async function applyToTransaction() {
+    if (!verify?.coupon || verify.result !== "VALID" || !selectedTxId) return;
+    const coupon = verify.coupon;
+    const tx = openTxs?.find((t) => t.id === selectedTxId);
+    setApplying(true);
+    setApplyError(null);
+    try {
+      await bizApiFetch<{ ok: true }>(`/biz/transactions/${selectedTxId}/coupon`, {
+        method: "POST",
+        body: { code: coupon.code },
+        token,
+      });
+      setReceipt({
+        couponName: coupon.name,
+        discountLabel: couponDiscountLabel(coupon),
+        trxLabel: tx ? `${tx.id.slice(0, 8)} · ${tx.customerName}` : selectedTxId.slice(0, 8),
+      });
+      setView("applied");
+      setHistoryReload((n) => n + 1);
+    } catch (error) {
+      setApplyError(
+        error instanceof BizApiError ? error.message : "쿠폰을 적용하지 못했습니다.",
+      );
+    } finally {
+      setApplying(false);
+    }
   }
 
   function resetLookup() {
     setCode("");
-    setCoupon(null);
+    setVerify(null);
     setReceipt(null);
-    setNotFound(false);
+    setApplyError(null);
+    setOpenTxs(null);
+    setSelectedTxId(null);
     setView("idle");
   }
 
@@ -180,7 +196,9 @@ export default function CouponsPage() {
     <>
       <div>
         <h1 className="text-xl md:text-2xl font-extrabold tracking-tight m-0">쿠폰 적용</h1>
-        <div className="text-sm text-caption mt-1.5">{NOW_LABEL}</div>
+        <div className="text-sm text-caption mt-1.5">
+          {kstDateLabel()} · KST · 고객 앱 발급 쿠폰 조회·검증
+        </div>
       </div>
 
       {view === "applied" && receipt ? (
@@ -194,7 +212,7 @@ export default function CouponsPage() {
                 className="flex gap-2.5"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  lookup(code);
+                  void lookup(code);
                 }}
               >
                 <input
@@ -217,99 +235,90 @@ export default function CouponsPage() {
                 <span className="text-xs font-semibold text-caption">또는</span>
                 <span className="flex-1 h-px bg-line" />
               </div>
-              <button
-                type="button"
-                onClick={handleQrScan}
-                disabled={view === "loading"}
-                className="h-[52px] rounded-2xl border-2 border-dashed border-slate-300 bg-surface hover:border-primary-light hover:text-primary text-body text-sm font-bold inline-flex items-center justify-center gap-2.5 disabled:opacity-50"
-              >
+              <div className="h-[52px] rounded-2xl border-2 border-dashed border-slate-300 bg-surface text-caption text-sm font-semibold inline-flex items-center justify-center gap-2.5">
                 <QrIcon className="w-5 h-5" />
-                QR 스캔으로 조회
-              </button>
-              <div className="text-xs text-caption leading-relaxed">
-                샘플 코드: <span className="tabular-nums font-semibold">GS-7A2K-M9Q4</span>(유효) ·{" "}
-                <span className="tabular-nums font-semibold">GS-3F8B-K2P7</span>(사용됨) ·{" "}
-                <span className="tabular-nums font-semibold">GS-9C1D-X5R2</span>(만료)
+                QR 스캔은 준비 중 — 코드를 직접 입력해주세요
               </div>
             </section>
 
             <section className="flex-1 min-w-72 bg-white border border-line rounded-3xl shadow-sm p-5 flex flex-col gap-1.5">
               <h3 className="text-sm font-extrabold m-0 mb-2">최근 적용 이력</h3>
-              {history.length === 0 ? (
+              {historyError ? (
+                <p className="text-xs text-red-600 m-0 py-4">{historyError}</p>
+              ) : history === null ? (
+                <div className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
+              ) : history.length === 0 ? (
                 <div className="flex flex-col items-center gap-2.5 text-center py-6">
                   <div className="w-11 h-11 rounded-2xl bg-slate-100 grid place-items-center text-slate-400">
                     <CouponTagIcon className="w-5 h-5" />
                   </div>
                   <div className="text-sm font-bold">아직 적용한 쿠폰이 없습니다</div>
-                  <p className="text-xs text-caption m-0">쿠폰을 조회해 거래에 적용하면 이력이 쌓입니다.</p>
+                  <p className="text-xs text-caption m-0">
+                    쿠폰을 조회해 거래에 적용하면 이력이 쌓입니다.
+                  </p>
                 </div>
               ) : (
-                history.map((h, i) => (
-                  <div key={`${h.meta}-${i}`} className="flex items-center gap-3 py-2.5 border-t border-slate-100">
+                history.map((h) => (
+                  <div
+                    key={h.couponId}
+                    className="flex items-center gap-3 py-2.5 border-t border-slate-100 first:border-t-0"
+                  >
                     <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 grid place-items-center text-primary shrink-0">
                       <CouponTagIcon className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold truncate">{h.name}</div>
-                      <div className="text-xs text-caption">{h.meta}</div>
+                      <div className="text-xs text-caption">
+                        {h.customerName ?? "고객"} · {kstTimeLabel(h.usedAt)} ·{" "}
+                        {h.sellRequestId.slice(0, 8)}
+                      </div>
                     </div>
-                    <div className="text-sm font-extrabold text-primary shrink-0 tabular-nums">{h.amount}</div>
+                    <div className="text-sm font-extrabold text-primary shrink-0 tabular-nums">
+                      +{krwLabel(h.benefitAmountKrw)}
+                    </div>
                   </div>
                 ))
               )}
             </section>
           </div>
 
-          {view === "loading" && <LoadingCard />}
+          {view === "loading" && (
+            <div className="w-full max-w-xl bg-white border border-line rounded-3xl shadow-sm p-5 flex flex-col gap-3">
+              <div className="h-[52px] rounded-2xl bg-slate-100 animate-pulse" />
+              <div className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
+            </div>
+          )}
 
-          {view === "result" && notFound && <NotFoundCard code={code} />}
-
-          {view === "result" && coupon?.result === "valid" && (
+          {view === "result" && verify && verify.result === "VALID" && verify.coupon && (
             <ValidCard
-              coupon={coupon}
-              transactions={OPEN_TRANSACTIONS}
+              coupon={verify.coupon}
+              transactions={openTxs}
               selectedTxId={selectedTxId}
               onSelectTx={setSelectedTxId}
-              onApply={applyToTransaction}
+              onApply={() => void applyToTransaction()}
+              applying={applying}
+              applyError={applyError}
             />
           )}
 
-          {view === "result" && coupon?.result === "used" && coupon.usedInfo && <UsedCard coupon={coupon} />}
+          {view === "result" && verify && verify.result === "ALREADY_USED" && verify.coupon && (
+            <UsedCard coupon={verify.coupon} usedInfo={verify.usedInfo ?? null} />
+          )}
 
-          {view === "result" && coupon?.result === "expired" && <ExpiredCard coupon={coupon} />}
+          {view === "result" &&
+            verify &&
+            verify.result !== "VALID" &&
+            verify.result !== "ALREADY_USED" && (
+              <FailureCard
+                code={code}
+                reason={verify.result}
+                coupon={verify.coupon}
+                fallbackMessage={applyError}
+              />
+            )}
         </>
       )}
     </>
-  );
-}
-
-function LoadingCard() {
-  return (
-    <div className="w-full max-w-xl bg-white border border-line rounded-3xl shadow-sm p-5 flex flex-col gap-3">
-      <div className="h-[52px] rounded-2xl bg-slate-100 animate-pulse" />
-      <div className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
-    </div>
-  );
-}
-
-function NotFoundCard({ code }: { code: string }) {
-  return (
-    <div className="max-w-xl bg-white border-2 border-amber-200 rounded-3xl overflow-hidden">
-      <div className="flex items-center gap-2.5 bg-amber-50 px-5 py-3 border-b border-dashed border-amber-300">
-        <AlertTriangleIcon className="w-[18px] h-[18px] text-amber-700" />
-        <span className="text-sm font-extrabold text-amber-700">적용할 수 없는 쿠폰입니다</span>
-        <span className="ml-auto text-xs text-amber-800 tabular-nums">{code.trim().toUpperCase()}</span>
-      </div>
-      <div className="p-5">
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3.5 flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-extrabold text-white bg-amber-700 rounded-full px-2.5 py-0.5">사유</span>
-            <span className="text-sm font-bold text-amber-800">존재하지 않는 쿠폰 코드입니다</span>
-          </div>
-          <div className="text-xs text-amber-800 leading-relaxed">코드를 다시 확인하거나 QR로 조회해주세요.</div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -319,12 +328,16 @@ function ValidCard({
   selectedTxId,
   onSelectTx,
   onApply,
+  applying,
+  applyError,
 }: {
-  coupon: Coupon;
-  transactions: OpenTransaction[];
-  selectedTxId: string;
+  coupon: ApiCouponSummary;
+  transactions: ApiOpenTransaction[] | null;
+  selectedTxId: string | null;
   onSelectTx: (id: string) => void;
   onApply: () => void;
+  applying: boolean;
+  applyError: string | null;
 }) {
   return (
     <div className="max-w-xl bg-white border-2 border-orange-100 rounded-3xl shadow-lg shadow-primary/5 overflow-hidden">
@@ -341,63 +354,91 @@ function ValidCard({
           <div className="flex-1 min-w-44">
             <div className="text-base font-extrabold">{coupon.name}</div>
             <div className="text-xs text-caption">
-              발급 고객 {coupon.issuedCustomer} · {coupon.issuedPhone}
+              발급 고객 {coupon.issuedCustomerName ?? "-"} · {coupon.issuedCustomerPhone ?? "-"}
             </div>
           </div>
           <div className="text-right">
-            <div className="text-xl font-extrabold text-primary">{coupon.discountLabel}</div>
-            <div className="text-xs text-caption">{coupon.discountSub}</div>
+            <div className="text-xl font-extrabold text-primary">
+              {couponDiscountLabel(coupon)}
+            </div>
+            <div className="text-xs text-caption">{couponConditionLabel(coupon)}</div>
           </div>
         </div>
-        <div className="flex flex-col gap-2">
-          <div className="text-xs font-extrabold text-body">적용할 거래 선택</div>
-          {transactions.map((tx) => {
-            const selected = tx.id === selectedTxId;
-            return (
-              <label
-                key={tx.id}
-                className={`flex items-center gap-3 border-2 rounded-2xl px-4 py-3 cursor-pointer ${
-                  selected ? "border-primary bg-orange-50" : "border-line bg-white hover:border-slate-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="tx"
-                  checked={selected}
-                  onChange={() => onSelectTx(tx.id)}
-                  className="w-[18px] h-[18px] accent-primary"
-                />
-                <div className="flex-1">
-                  <div className={`text-sm font-bold ${selected ? "" : "text-body"}`}>
-                    {tx.id} · {tx.customer} · {tx.stage}
-                  </div>
-                  <div className="text-xs text-caption">
-                    {tx.time} · {tx.item}
-                  </div>
-                </div>
-                {tx.issuedMatch && (
-                  <span className="text-[11px] font-bold text-primary bg-white border border-orange-100 rounded-full px-2.5 py-0.5 shrink-0">
-                    발급 고객 일치
-                  </span>
-                )}
-              </label>
-            );
-          })}
+        <div className="text-xs text-caption leading-relaxed bg-surface border border-line rounded-xl px-3.5 py-2.5">
+          고객 혜택 가산 방식입니다 — 거래 완료 시 최종 지급액 = 매입 금액 + 쿠폰 혜택.
+          {coupon.minTransactionKrw != null &&
+            ` 최소 거래금액 ${krwLabel(coupon.minTransactionKrw)} 조건은 완료 시점에 검증됩니다.`}
         </div>
+        <div className="flex flex-col gap-2">
+          <div className="text-xs font-extrabold text-body">적용할 거래 선택 (진행중 · 최근 7일)</div>
+          {transactions === null ? (
+            <div className="h-16 rounded-2xl bg-slate-100 animate-pulse" />
+          ) : transactions.length === 0 ? (
+            <div className="text-sm text-caption bg-surface border border-line rounded-2xl px-4 py-3.5 leading-relaxed">
+              진행중인 거래가 없습니다. 거래 처리 화면에서 거래를 먼저 접수해주세요.
+            </div>
+          ) : (
+            transactions.map((tx) => {
+              const selected = tx.id === selectedTxId;
+              const issuedMatch = maskedPhoneMatches(coupon.issuedCustomerPhone, tx.customerPhone);
+              return (
+                <label
+                  key={tx.id}
+                  className={`flex items-center gap-3 border-2 rounded-2xl px-4 py-3 cursor-pointer ${
+                    selected ? "border-primary bg-orange-50" : "border-line bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="tx"
+                    checked={selected}
+                    onChange={() => onSelectTx(tx.id)}
+                    className="w-[18px] h-[18px] accent-primary"
+                  />
+                  <div className="flex-1">
+                    <div className={`text-sm font-bold ${selected ? "" : "text-body"}`}>
+                      {tx.id.slice(0, 8)} · {tx.customerName}
+                    </div>
+                    <div className="text-xs text-caption">
+                      {kstTimeLabel(tx.createdAt)}
+                      {tx.memo ? ` · ${tx.memo}` : ""}
+                    </div>
+                  </div>
+                  {issuedMatch && (
+                    <span className="text-[11px] font-bold text-primary bg-white border border-orange-100 rounded-full px-2.5 py-0.5 shrink-0">
+                      발급 고객 일치
+                    </span>
+                  )}
+                </label>
+              );
+            })
+          )}
+        </div>
+        {applyError && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+            {applyError}
+          </div>
+        )}
         <button
           type="button"
           onClick={onApply}
-          className="h-14 rounded-2xl bg-primary hover:bg-primary-light text-white text-base font-bold shadow-lg shadow-primary/25"
+          disabled={applying || !selectedTxId}
+          className="h-14 rounded-2xl bg-primary hover:bg-primary-light text-white text-base font-bold shadow-lg shadow-primary/25 disabled:opacity-50"
         >
-          거래에 적용
+          {applying ? "적용 중..." : "거래에 적용"}
         </button>
       </div>
     </div>
   );
 }
 
-function UsedCard({ coupon }: { coupon: Coupon }) {
-  const used = coupon.usedInfo!;
+function UsedCard({
+  coupon,
+  usedInfo,
+}: {
+  coupon: ApiCouponSummary;
+  usedInfo: { usedAt: string; storeName: string | null; sellRequestId: string | null } | null;
+}) {
   return (
     <div className="max-w-xl bg-white border-2 border-red-200 rounded-3xl overflow-hidden">
       <div className="flex items-center gap-2.5 bg-red-50 px-5 py-3 border-b border-dashed border-red-300">
@@ -413,24 +454,30 @@ function UsedCard({ coupon }: { coupon: Coupon }) {
           <div className="flex-1 min-w-44">
             <div className="text-base font-extrabold line-through text-caption">{coupon.name}</div>
             <div className="text-xs text-caption">
-              발급 고객 {coupon.issuedCustomer} · {coupon.issuedPhone}
+              발급 고객 {coupon.issuedCustomerName ?? "-"} · {coupon.issuedCustomerPhone ?? "-"}
             </div>
           </div>
         </div>
-        <div className="bg-surface border border-line rounded-2xl px-4 py-3.5 flex flex-col gap-2">
-          <div className="flex justify-between">
-            <span className="text-xs text-caption">사용 일시</span>
-            <span className="text-sm font-bold">{used.at}</span>
+        {usedInfo && (
+          <div className="bg-surface border border-line rounded-2xl px-4 py-3.5 flex flex-col gap-2">
+            <div className="flex justify-between">
+              <span className="text-xs text-caption">사용 일시</span>
+              <span className="text-sm font-bold">
+                {usedInfo.usedAt ? `${kstTimeLabel(usedInfo.usedAt)} KST` : "-"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-xs text-caption">사용 매장</span>
+              <span className="text-sm font-bold">{usedInfo.storeName ?? "-"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-xs text-caption">적용 거래</span>
+              <span className="text-sm font-bold tabular-nums">
+                {usedInfo.sellRequestId ? usedInfo.sellRequestId.slice(0, 8) : "-"}
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-caption">사용 매장</span>
-            <span className="text-sm font-bold">{used.store}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-caption">적용 거래</span>
-            <span className="text-sm font-bold tabular-nums">{used.trx}</span>
-          </div>
-        </div>
+        )}
         <div className="text-sm text-red-700 leading-relaxed">
           사용 완료된 쿠폰은 재사용할 수 없습니다. 고객에게 사용 이력을 안내해주세요.
         </div>
@@ -439,32 +486,52 @@ function UsedCard({ coupon }: { coupon: Coupon }) {
   );
 }
 
-function ExpiredCard({ coupon }: { coupon: Coupon }) {
+function FailureCard({
+  code,
+  reason,
+  coupon,
+  fallbackMessage,
+}: {
+  code: string;
+  reason: Exclude<CouponVerifyReason, "VALID">;
+  coupon: ApiCouponSummary | null;
+  fallbackMessage: string | null;
+}) {
+  const label = COUPON_REASON_LABELS[reason] ?? fallbackMessage ?? "적용할 수 없는 쿠폰입니다";
   return (
     <div className="max-w-xl bg-white border-2 border-amber-200 rounded-3xl overflow-hidden">
       <div className="flex items-center gap-2.5 bg-amber-50 px-5 py-3 border-b border-dashed border-amber-300">
         <AlertTriangleIcon className="w-[18px] h-[18px] text-amber-700" />
         <span className="text-sm font-extrabold text-amber-700">적용할 수 없는 쿠폰입니다</span>
-        <span className="ml-auto text-xs text-amber-800 tabular-nums">{coupon.code}</span>
+        <span className="ml-auto text-xs text-amber-800 tabular-nums">
+          {code.trim().toUpperCase()}
+        </span>
       </div>
       <div className="p-5 flex flex-col gap-3.5">
-        <div className="flex gap-4 items-center flex-wrap opacity-75">
-          <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-line grid place-items-center text-caption shrink-0">
-            <CouponTagIcon className="w-6 h-6" />
-          </div>
-          <div className="flex-1 min-w-44">
-            <div className="text-base font-extrabold text-caption">{coupon.name}</div>
-            <div className="text-xs text-caption">
-              {coupon.discountLabel} · {coupon.discountSub} · 발급 고객 {coupon.issuedCustomer}
+        {coupon && (
+          <div className="flex gap-4 items-center flex-wrap opacity-75">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-line grid place-items-center text-caption shrink-0">
+              <CouponTagIcon className="w-6 h-6" />
+            </div>
+            <div className="flex-1 min-w-44">
+              <div className="text-base font-extrabold text-caption">{coupon.name}</div>
+              <div className="text-xs text-caption">
+                {couponDiscountLabel(coupon)} · {couponConditionLabel(coupon)} · 발급 고객{" "}
+                {coupon.issuedCustomerName ?? "-"}
+              </div>
             </div>
           </div>
-        </div>
+        )}
         <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3.5 flex flex-col gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-extrabold text-white bg-amber-700 rounded-full px-2.5 py-0.5">사유</span>
-            <span className="text-sm font-bold text-amber-800">{coupon.reason}</span>
+            <span className="text-[11px] font-extrabold text-white bg-amber-700 rounded-full px-2.5 py-0.5">
+              사유
+            </span>
+            <span className="text-sm font-bold text-amber-800">{label}</span>
           </div>
-          {coupon.reasonSub && <div className="text-xs text-amber-800 leading-relaxed">{coupon.reasonSub}</div>}
+          <div className="text-xs text-amber-800 leading-relaxed">
+            코드를 다시 확인하거나 고객에게 쿠폰 상태를 안내해주세요.
+          </div>
         </div>
       </div>
     </div>
@@ -480,7 +547,7 @@ function AppliedCard({ receipt, onReset }: { receipt: AppliedReceipt; onReset: (
         </div>
         <div>
           <h2 className="text-2xl font-extrabold m-0">쿠폰이 적용되었습니다</h2>
-          <div className="text-sm text-caption mt-2">{APPLIED_LABEL}</div>
+          <div className="text-sm text-caption mt-2">{kstDateLabel()} KST</div>
         </div>
         <div className="w-full bg-surface border border-line rounded-2xl p-[18px] flex flex-col gap-2.5 text-left">
           <div className="flex justify-between gap-3">
@@ -488,8 +555,8 @@ function AppliedCard({ receipt, onReset }: { receipt: AppliedReceipt; onReset: (
             <span className="text-sm font-bold">{receipt.couponName}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-xs text-caption">할인</span>
-            <span className="text-sm font-extrabold text-primary">{receipt.discount}</span>
+            <span className="text-xs text-caption">혜택</span>
+            <span className="text-sm font-extrabold text-primary">{receipt.discountLabel}</span>
           </div>
           <div className="flex justify-between gap-3">
             <span className="text-xs text-caption">적용 거래</span>
@@ -497,17 +564,16 @@ function AppliedCard({ receipt, onReset }: { receipt: AppliedReceipt; onReset: (
           </div>
           <div className="flex justify-between gap-3">
             <span className="text-xs text-caption">반영 시점</span>
-            <span className="text-sm font-bold">감정 후 정산 금액에서 차감</span>
+            <span className="text-sm font-bold">거래 완료 시 지급액에 가산</span>
           </div>
         </div>
         <div className="w-full flex flex-col gap-2.5">
-          {/* TODO(API 연동): 해당 거래 상세로 라우팅(/transactions/:id) */}
-          <button
-            type="button"
-            className="h-[52px] rounded-2xl bg-primary hover:bg-primary-light text-white text-sm font-bold shadow-lg shadow-primary/25"
+          <Link
+            href="/transactions"
+            className="h-[52px] rounded-2xl bg-primary hover:bg-primary-light text-white text-sm font-bold shadow-lg shadow-primary/25 grid place-items-center"
           >
-            해당 거래로 이동
-          </button>
+            거래 처리 화면으로 이동
+          </Link>
           <button
             type="button"
             onClick={onReset}

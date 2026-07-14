@@ -18,6 +18,12 @@ import { Badge, Card, Input, ListRow, FilterChip } from "@/components/ui";
 import type { BadgeTone } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
+import {
+  type ApiCouponSummary,
+  couponBenefitOf,
+  couponConditionLabel,
+  couponDiscountLabel,
+} from "@/lib/coupon";
 
 type TxStatus = "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 type DateRange = "today" | "week" | "all";
@@ -54,6 +60,7 @@ type ApiTransactionDetail = ApiTransaction & {
   estimatedPrice: number | null;
   settlementMemo: string | null;
   appraisalLines: ApiAppraisalLine[];
+  appliedCoupon: ApiCouponSummary | null;
 };
 
 /** GET /biz/transactions/customers/lookup 응답 — 회원은 마스킹·생년월일 미노출. */
@@ -388,6 +395,23 @@ function DetailPanel({
     }
   }
 
+  /** 완료 전 쿠폰 적용 해제 — 쿠폰은 ACTIVE 로 복귀해 고객이 재사용할 수 있다. */
+  async function handleReleaseCoupon() {
+    setSubmitting(true);
+    setActionError(null);
+    try {
+      await bizApiFetch<{ ok: true }>(`/biz/transactions/${id}/coupon`, {
+        method: "DELETE",
+        token,
+      });
+      setReloadCount((n) => n + 1);
+    } catch (error) {
+      setActionError(error instanceof BizApiError ? error.message : "쿠폰을 해제하지 못했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-slate-900/45" onClick={onClose} aria-hidden />
@@ -466,6 +490,28 @@ function DetailPanel({
                 )}
               </div>
 
+              {detail.appliedCoupon && (
+                <div className="bg-white border-2 border-orange-100 rounded-2xl px-[18px] py-4 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold truncate">{detail.appliedCoupon.name}</div>
+                    <div className="text-xs text-caption">
+                      {couponDiscountLabel(detail.appliedCoupon)} ·{" "}
+                      {couponConditionLabel(detail.appliedCoupon)}
+                      {detail.appliedCoupon.status === "USED" ? " · 사용 완료" : " · 적용 중"}
+                    </div>
+                  </div>
+                  {detail.status === "IN_PROGRESS" && detail.appliedCoupon.status === "APPLIED" && (
+                    <button
+                      disabled={submitting}
+                      onClick={() => void handleReleaseCoupon()}
+                      className="h-9 px-3.5 rounded-xl bg-white border border-line hover:border-red-200 hover:text-red-600 text-caption text-xs font-semibold shrink-0 disabled:opacity-60"
+                    >
+                      쿠폰 해제
+                    </button>
+                  )}
+                </div>
+              )}
+
               {detail.appraisalLines.length > 0 && (
                 <div className="flex flex-col gap-2.5">
                   <h3 className="text-sm font-extrabold text-body m-0">감정 내역</h3>
@@ -506,6 +552,9 @@ function DetailPanel({
                   <AppraisalForm
                     token={token}
                     id={id}
+                    appliedCoupon={
+                      detail.appliedCoupon?.status === "APPLIED" ? detail.appliedCoupon : null
+                    }
                     submitting={submitting}
                     setSubmitting={setSubmitting}
                     onDone={() => {
@@ -598,10 +647,11 @@ function emptyLine(): LineDraft {
   return { metal: "GOLD", purity: "24K", weightGram: "", purityPercent: "99.9", note: "" };
 }
 
-/** 감정 행 + 최종 매입가 입력 → POST /biz/transactions/:id/complete */
+/** 감정 행 + 최종 매입가 입력 → POST /biz/transactions/:id/complete (쿠폰 APPLIED 시 혜택 미리보기 표시) */
 function AppraisalForm({
   token,
   id,
+  appliedCoupon,
   submitting,
   setSubmitting,
   onDone,
@@ -610,6 +660,7 @@ function AppraisalForm({
 }: {
   token: string | null;
   id: string;
+  appliedCoupon: ApiCouponSummary | null;
   submitting: boolean;
   setSubmitting: (v: boolean) => void;
   onDone: () => void;
@@ -783,7 +834,7 @@ function AppraisalForm({
       </button>
 
       <Field
-        label="최종 매입 금액(원)"
+        label={appliedCoupon ? "매입 금액(원) — 쿠폰 가산 전" : "최종 매입 금액(원)"}
         required
         error={showErrors && priceInvalid}
         errorText="최종 금액을 입력해주세요"
@@ -797,6 +848,41 @@ function AppraisalForm({
           onChange={(e) => setFinalPrice(e.target.value)}
         />
       </Field>
+
+      {appliedCoupon && (
+        <div className="bg-white border border-orange-100 rounded-2xl px-4 py-3.5 flex flex-col gap-1.5">
+          <div className="text-xs font-extrabold text-primary">
+            쿠폰 적용 미리보기 — {appliedCoupon.name}
+          </div>
+          {(() => {
+            const base = Number(onlyDigits(finalPrice));
+            if (!(base > 0)) {
+              return (
+                <div className="text-xs text-caption leading-relaxed">
+                  매입 금액을 입력하면 쿠폰 가산 후 최종 지급액을 미리 보여드립니다.
+                </div>
+              );
+            }
+            if (appliedCoupon.minTransactionKrw != null && base < appliedCoupon.minTransactionKrw) {
+              return (
+                <div className="text-xs text-red-600 leading-relaxed">
+                  최소 거래금액 {krw(appliedCoupon.minTransactionKrw)} 미달 — 이대로 확정하면
+                  실패합니다. 쿠폰을 해제하거나 금액을 확인하세요.
+                </div>
+              );
+            }
+            const benefit = couponBenefitOf(appliedCoupon, base);
+            return (
+              <div className="text-sm tabular-nums">
+                {krw(base)} <span className="text-caption">+</span>{" "}
+                <span className="text-primary font-bold">{krw(benefit)}</span>{" "}
+                <span className="text-caption">=</span>{" "}
+                <span className="font-extrabold">최종 지급 {krw(base + benefit)}</span>
+              </div>
+            );
+          })()}
+        </div>
+      )}
       <Input
         placeholder="정산 메모 (선택)"
         value={memo}
