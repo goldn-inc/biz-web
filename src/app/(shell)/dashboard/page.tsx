@@ -501,13 +501,32 @@ function ProductTabsCard({
   popular: ApiProduct[] | null;
 }) {
   const [tab, setTab] = useState<"newest" | "popular">("newest");
-  const railRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLDivElement | null>(null);
+  // 끝단 도달 시 해당 방향 화살표 숨김 — scroll 이벤트와 마운트/탭 전환 시점에 측정.
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
   const products = tab === "newest" ? newest : popular;
   const showOrderCount = tab === "popular";
   const emptyDesc =
     tab === "newest"
       ? "새로 등록된 상품이 없습니다."
       : "발주 데이터가 쌓이면 인기 상품이 표시됩니다.";
+
+  function updateArrows(el: HTMLDivElement | null) {
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 4);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }
+
+  /** 탭 전환 시 레일을 처음으로 되돌리고 화살표를 재측정. ref 콜백이 마운트 측정을 담당. */
+  function handleTabChange(next: "newest" | "popular") {
+    setTab(next);
+    const el = railRef.current;
+    if (el) {
+      el.scrollTo({ left: 0 });
+      updateArrows(el);
+    }
+  }
 
   /** 좌우 화살표 버튼 — 카드 2장 폭만큼 부드럽게 이동 */
   function scrollRail(dir: 1 | -1) {
@@ -519,7 +538,7 @@ function ProductTabsCard({
       <div className="flex items-center justify-between gap-3">
         <div className="flex bg-surface border border-line rounded-xl p-0.5 gap-0.5">
           <button
-            onClick={() => setTab("newest")}
+            onClick={() => handleTabChange("newest")}
             className={`h-9 px-3.5 rounded-[10px] text-sm transition ${
               tab === "newest" ? "bg-white shadow-sm font-bold" : "text-caption font-semibold hover:text-body"
             }`}
@@ -527,7 +546,7 @@ function ProductTabsCard({
             신상품
           </button>
           <button
-            onClick={() => setTab("popular")}
+            onClick={() => handleTabChange("popular")}
             className={`h-9 px-3.5 rounded-[10px] text-sm transition ${
               tab === "popular" ? "bg-white shadow-sm font-bold" : "text-caption font-semibold hover:text-body"
             }`}
@@ -549,7 +568,14 @@ function ProductTabsCard({
         <EmptyState icon={<WholesaleIcon className="w-6 h-6" />} title="상품이 없습니다" desc={emptyDesc} />
       ) : (
         <div className="relative">
-          <div ref={railRef} className="no-scrollbar flex gap-3.5 overflow-x-auto pb-1 -mx-1 px-1">
+          <div
+            ref={(node) => {
+              railRef.current = node;
+              updateArrows(node);
+            }}
+            onScroll={(e) => updateArrows(e.currentTarget)}
+            className="no-scrollbar flex gap-3.5 overflow-x-auto pb-1 -mx-1 px-1"
+          >
           {products.map((p) => (
             <Link
               key={p.id}
@@ -590,21 +616,25 @@ function ProductTabsCard({
           </Link>
           </div>
 
-          {/* 좌우 이동 화살표 — 스크롤바 대신 사용 */}
-          <button
-            aria-label="이전 상품"
-            onClick={() => scrollRail(-1)}
-            className="absolute -left-2 top-[34%] w-9 h-9 rounded-full bg-white border border-line shadow-md grid place-items-center text-body hover:text-primary hover:border-primary-light"
-          >
-            <ChevronRightIcon className="w-4 h-4 rotate-180" />
-          </button>
-          <button
-            aria-label="다음 상품"
-            onClick={() => scrollRail(1)}
-            className="absolute -right-2 top-[34%] w-9 h-9 rounded-full bg-white border border-line shadow-md grid place-items-center text-body hover:text-primary hover:border-primary-light"
-          >
-            <ChevronRightIcon className="w-4 h-4" />
-          </button>
+          {/* 좌우 이동 화살표 — 스크롤바 대신 사용, 끝단에서는 해당 방향 숨김 */}
+          {canLeft && (
+            <button
+              aria-label="이전 상품"
+              onClick={() => scrollRail(-1)}
+              className="absolute -left-2 top-[34%] w-9 h-9 rounded-full bg-white border border-line shadow-md grid place-items-center text-body hover:text-primary hover:border-primary-light"
+            >
+              <ChevronRightIcon className="w-4 h-4 rotate-180" />
+            </button>
+          )}
+          {canRight && (
+            <button
+              aria-label="다음 상품"
+              onClick={() => scrollRail(1)}
+              className="absolute -right-2 top-[34%] w-9 h-9 rounded-full bg-white border border-line shadow-md grid place-items-center text-body hover:text-primary hover:border-primary-light"
+            >
+              <ChevronRightIcon className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
     </section>
