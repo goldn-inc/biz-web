@@ -8,17 +8,16 @@ import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch } from "@/lib/api";
 import { isWholesaleTier, tierLabel } from "@/lib/session";
 import { DetailPanel, RegistrationForm } from "@/components/transactions/PurchaseFlow";
-
-type ReservationStatus = "PENDING" | "WAITLISTED" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
-
-/** GET /biz/reservations 항목(기본 = KST 오늘). customerName 은 서버 마스킹 완료값. */
-type ApiReservation = {
-  id: string;
-  visitSlot: string | null;
-  purpose: string | null;
-  status: ReservationStatus;
-  customerName: string;
-};
+import {
+  ReservationConfirmDialog,
+  ReservationDetailPanel,
+  toReservation,
+  type ApiReservation,
+  type DestructiveAction,
+  type Reservation,
+  type ReservationStatus,
+} from "@/components/reservations/ReservationFlow";
+import { CouponApplyWidget } from "@/components/coupons/CouponApplyWidget";
 
 type TxStatus = "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 
@@ -97,6 +96,17 @@ export default function DashboardPage() {
   const [purchaseTxId, setPurchaseTxId] = useState<string | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
 
+  // 예약 바로 처리 — 오늘 예약 행 클릭 시 상세 패널(확정/방문완료/취소/노쇼)을 대시보드에서 연다.
+  const [resvSelectedId, setResvSelectedId] = useState<string | null>(null);
+  const [resvDialog, setResvDialog] = useState<{
+    action: DestructiveAction;
+    target: Reservation;
+  } | null>(null);
+  const [resvError, setResvError] = useState<string | null>(null);
+
+  // 쿠폰 적용 — 조회·검증·거래 적용을 대시보드 모달에서 처리.
+  const [couponOpen, setCouponOpen] = useState(false);
+
   useEffect(() => {
     if (!token) return;
     let alive = true;
@@ -138,6 +148,34 @@ export default function DashboardPage() {
   const todayReservations = (reservations ?? []).filter(
     (r) => r.status !== "CANCELLED" && r.status !== "NO_SHOW",
   );
+
+  const resvSelectedApi = (reservations ?? []).find((r) => r.id === resvSelectedId) ?? null;
+  const resvSelected = resvSelectedApi ? toReservation(resvSelectedApi) : null;
+
+  async function applyResvStatus(id: string, status: ReservationStatus) {
+    setResvError(null);
+    try {
+      await bizApiFetch<{ ok: true }>(`/biz/reservations/${id}/status`, {
+        method: "PATCH",
+        body: { status },
+        token,
+      });
+      setReservations((prev) =>
+        prev ? prev.map((r) => (r.id === id ? { ...r, status } : r)) : prev,
+      );
+      return true;
+    } catch (err) {
+      setResvError(err instanceof Error ? err.message : "상태를 변경하지 못했습니다.");
+      return false;
+    }
+  }
+
+  async function confirmResvDialog() {
+    if (!resvDialog) return;
+    const ok = await applyResvStatus(resvDialog.target.id, resvDialog.action);
+    setResvDialog(null);
+    if (ok) setResvSelectedId(null);
+  }
   const activeTx = (transactions ?? []).filter((t) => t.status !== "CANCELED");
   const recentOrders = (orders ?? []).slice(0, 3);
 
@@ -174,13 +212,13 @@ export default function DashboardPage() {
           <PlusIcon className="w-4 h-4" />
           현장 매입 등록
         </button>
-        <Link
-          href="/coupons"
+        <button
+          onClick={() => setCouponOpen(true)}
           className="h-12 px-5 rounded-2xl bg-white border border-line hover:border-primary-light hover:text-primary text-body text-sm font-semibold inline-flex items-center gap-2"
         >
           <TicketIcon className="w-4 h-4" />
           쿠폰 적용
-        </Link>
+        </button>
         <Link
           href="/reservations"
           className="h-12 px-5 rounded-2xl bg-white border border-line hover:border-primary-light hover:text-primary text-body text-sm font-semibold inline-flex items-center gap-2"
@@ -236,7 +274,11 @@ export default function DashboardPage() {
               {todayReservations.map((r) => {
                 const badge = RESERVATION_BADGE[r.status] ?? { label: r.status, tone: "slate" as const };
                 return (
-                  <div key={r.id} className="flex items-center gap-3.5 py-3 border-t border-slate-100">
+                  <button
+                    key={r.id}
+                    onClick={() => setResvSelectedId(r.id)}
+                    className="flex items-center gap-3.5 py-3 border-t border-slate-100 w-full text-left hover:bg-orange-50/40 transition rounded-lg px-1 -mx-1"
+                  >
                     <div className="text-sm font-extrabold w-12 shrink-0">{r.visitSlot ?? "—"}</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold truncate">{r.customerName}</div>
@@ -245,7 +287,7 @@ export default function DashboardPage() {
                     <Badge tone={badge.tone} className="shrink-0">
                       {badge.label}
                     </Badge>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -391,6 +433,68 @@ export default function DashboardPage() {
           onClose={() => setPurchaseTxId(null)}
           onChanged={() => setReloadCount((n) => n + 1)}
         />
+      )}
+
+      {/* 예약 바로 처리 — 오늘 예약 행 클릭 시 */}
+      {resvSelected && (
+        <ReservationDetailPanel
+          reservation={resvSelected}
+          onClose={() => {
+            setResvSelectedId(null);
+            setResvError(null);
+          }}
+          onConfirm={() => {
+            void applyResvStatus(resvSelected.id, "CONFIRMED").then((ok) => {
+              if (ok) setResvSelectedId(null);
+            });
+          }}
+          onComplete={() => {
+            void applyResvStatus(resvSelected.id, "COMPLETED").then((ok) => {
+              if (ok) setResvSelectedId(null);
+            });
+          }}
+          onNoShow={() => setResvDialog({ action: "NO_SHOW", target: resvSelected })}
+          onCancel={() => setResvDialog({ action: "CANCELLED", target: resvSelected })}
+        />
+      )}
+      {resvError && resvSelected && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium shadow-lg">
+          {resvError}
+        </div>
+      )}
+      {resvDialog && (
+        <ReservationConfirmDialog
+          action={resvDialog.action}
+          target={resvDialog.target}
+          onClose={() => setResvDialog(null)}
+          onConfirm={() => void confirmResvDialog()}
+        />
+      )}
+
+      {/* 쿠폰 적용 모달 — 조회·검증·거래 적용 */}
+      {couponOpen && (
+        <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-900/45">
+          <div className="min-h-full p-4 md:p-8 grid place-items-start justify-center">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="쿠폰 적용"
+              className="w-full max-w-xl bg-surface rounded-3xl shadow-2xl p-5 md:p-7 flex flex-col gap-5 relative"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-extrabold m-0">쿠폰 적용</h2>
+                <button
+                  aria-label="닫기"
+                  onClick={() => setCouponOpen(false)}
+                  className="w-10 h-10 rounded-xl bg-white border border-line hover:bg-slate-100 grid place-items-center text-body"
+                >
+                  <XIcon className="w-[18px] h-[18px]" />
+                </button>
+              </div>
+              <CouponApplyWidget token={token} onApplied={() => setReloadCount((n) => n + 1)} />
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
