@@ -481,7 +481,7 @@ export default function DashboardPage() {
               role="dialog"
               aria-modal="true"
               aria-label="쿠폰 적용"
-              className="w-full max-w-xl bg-surface rounded-3xl shadow-2xl p-5 md:p-7 flex flex-col gap-5 relative"
+              className="w-full max-w-2xl bg-surface rounded-3xl shadow-2xl p-6 md:p-9 flex flex-col gap-6 relative"
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-extrabold m-0">쿠폰 적용</h2>
