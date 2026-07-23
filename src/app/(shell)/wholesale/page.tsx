@@ -62,8 +62,8 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 const STATUS_META: Record<OrderStatus, { label: string; tone: "slate" | "blue" | "green" }> = {
-  REQUESTED: { label: "요청됨", tone: "slate" },
-  CONFIRMED: { label: "확인됨", tone: "blue" },
+  REQUESTED: { label: "접수됨", tone: "slate" },
+  CONFIRMED: { label: "진행 중", tone: "blue" },
   COMPLETED: { label: "완료", tone: "green" },
   CANCELED: { label: "취소", tone: "slate" },
 };
@@ -664,25 +664,31 @@ function OrderProgressPanel({
     };
   }, [id, token]);
 
-  // 진행 단계 계산: 0 접수 → 1 본사 확인 → 2 출고·배송 → 3 입고 완료
+  // 진행 단계: 접수(발주 즉시 완료) → 제작 중 → 배송중 → 입고 완료.
+  // 제작완료(개체 배정=RESERVED)는 제작 중 단계의 카운트로 보여준다.
+  const reservedCount = detail?.items.filter((i) => i.status === "RESERVED").length ?? 0;
   const shippedCount = detail?.items.filter((i) => i.status === "SHIPPED").length ?? 0;
   const deliveredCount = detail?.items.filter((i) => i.status === "DELIVERED").length ?? 0;
   const currentStep = !detail
-    ? 0
+    ? 1
     : detail.status === "COMPLETED"
-      ? 3
-      : detail.status === "CONFIRMED"
-        ? shippedCount + deliveredCount > 0
-          ? 2
-          : 1
-        : 0;
+      ? 4
+      : shippedCount + deliveredCount > 0
+        ? 2
+        : 1;
   const canceled = detail?.status === "CANCELED";
 
   const STEPS = [
-    { title: "주문 접수", desc: "매장에서 발주를 접수했습니다" },
-    { title: "본사 확인", desc: "본사가 주문을 확인하고 출고를 준비합니다" },
-    { title: "출고 · 배송", desc: "개체(시리얼)가 배정되어 매장으로 이동 중입니다" },
-    { title: "입고 완료", desc: "매장에서 수령을 확인했습니다" },
+    { title: "주문 접수", desc: "발주가 접수되었습니다" },
+    {
+      title: "제작 중",
+      desc:
+        detail?.status === "REQUESTED"
+          ? "본사 확인 대기 중 — 확인되는 대로 제작·조달이 시작됩니다"
+          : "본사가 제작·조달을 진행하고 있습니다",
+    },
+    { title: "배송중", desc: "출고되어 매장으로 이동 중입니다 — 수령 시 바코드를 스캔해주세요" },
+    { title: "입고 완료", desc: "매장 바코드 스캔으로 수령이 확인되었습니다" },
   ];
 
   return (
@@ -762,9 +768,14 @@ function OrderProgressPanel({
                             {active && <span className="ml-2 text-[11px] font-extrabold text-white bg-primary rounded-full px-2 py-0.5">진행중</span>}
                           </div>
                           <div className="text-xs text-caption leading-relaxed mt-0.5">{s.desc}</div>
-                          {i === 2 && detail.items.length > 0 && (
+                          {i === 1 && reservedCount > 0 && (
                             <div className="text-xs font-semibold text-body mt-1 tabular-nums">
-                              배정 {detail.items.length}개 · 배송중 {shippedCount} · 입고 확인 {deliveredCount}
+                              제작완료 · 출고 준비 {reservedCount}개
+                            </div>
+                          )}
+                          {i === 2 && shippedCount + deliveredCount > 0 && (
+                            <div className="text-xs font-semibold text-body mt-1 tabular-nums">
+                              배송중 {shippedCount} · 입고 확인 {deliveredCount} / 총 {detail.quantity}개
                             </div>
                           )}
                         </div>
