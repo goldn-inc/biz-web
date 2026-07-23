@@ -8,6 +8,7 @@ import {
   WholesaleIcon,
   CheckIcon,
   AlertCircleIcon,
+  XIcon,
 } from "@/components/icons";
 import { Badge, Button, FilterChip } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
@@ -43,6 +44,11 @@ type ApiOrder = {
   memo: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** GET /biz/wholesale/orders/:id — 진행 스테퍼용 개체(시리얼) 상태 포함. */
+type ApiOrderDetail = ApiOrder & {
+  items: { serial: string; status: string; receivedAt: string | null }[];
 };
 
 /** products.category → 한국어 라벨. */
@@ -524,6 +530,7 @@ function OrderHistory({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   async function cancelOrder(order: ApiOrder) {
     setBusyId(order.id);
@@ -587,6 +594,12 @@ function OrderHistory({
             <Badge tone={STATUS_META[o.status].tone} className="shrink-0">
               {STATUS_META[o.status].label}
             </Badge>
+            <button
+              onClick={() => setDetailId(o.id)}
+              className="shrink-0 h-9 px-3.5 rounded-xl bg-white border border-line hover:border-primary-light hover:text-primary text-body text-xs font-semibold"
+            >
+              진행 상황
+            </button>
             {o.status === "REQUESTED" && (
               <button
                 onClick={() => void cancelOrder(o)}
@@ -599,7 +612,201 @@ function OrderHistory({
           </div>
         ))}
       </div>
+
+      {detailId && (
+        <OrderProgressPanel token={token} id={detailId} onClose={() => setDetailId(null)} />
+      )}
     </>
+  );
+}
+
+/** 개체 상태 → 진행 라벨. 바인딩 전 개체는 존재하지 않으므로 목록 자체가 출고 준비의 신호다. */
+const ITEM_STATUS_META: Record<string, { label: string; tone: "slate" | "blue" | "green" }> = {
+  RESERVED: { label: "출고 준비", tone: "slate" },
+  SHIPPED: { label: "배송중", tone: "blue" },
+  DELIVERED: { label: "입고 확인", tone: "green" },
+  RETURNED: { label: "반송", tone: "slate" },
+  VOID: { label: "폐기", tone: "slate" },
+};
+
+/** 주문 진행 슬라이드오버 — 접수→본사 확인→출고·배송→입고 완료 스테퍼 + 개체(시리얼)별 상태. */
+function OrderProgressPanel({
+  token,
+  id,
+  onClose,
+}: {
+  token: string | null;
+  id: string;
+  onClose: () => void;
+}) {
+  const [result, setResult] = useState<{ key: string; detail?: ApiOrderDetail; error?: string } | null>(null);
+  const loading = result?.key !== id;
+  const detail = !loading ? result?.detail : undefined;
+  const loadError = !loading ? (result?.error ?? null) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await bizApiFetch<ApiOrderDetail>(`/biz/wholesale/orders/${id}`, { token });
+        if (!cancelled) setResult({ key: id, detail: res });
+      } catch (e) {
+        if (!cancelled) {
+          setResult({
+            key: id,
+            error: e instanceof BizApiError ? e.message : "주문 정보를 불러오지 못했습니다.",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, token]);
+
+  // 진행 단계 계산: 0 접수 → 1 본사 확인 → 2 출고·배송 → 3 입고 완료
+  const shippedCount = detail?.items.filter((i) => i.status === "SHIPPED").length ?? 0;
+  const deliveredCount = detail?.items.filter((i) => i.status === "DELIVERED").length ?? 0;
+  const currentStep = !detail
+    ? 0
+    : detail.status === "COMPLETED"
+      ? 3
+      : detail.status === "CONFIRMED"
+        ? shippedCount + deliveredCount > 0
+          ? 2
+          : 1
+        : 0;
+  const canceled = detail?.status === "CANCELED";
+
+  const STEPS = [
+    { title: "주문 접수", desc: "매장에서 발주를 접수했습니다" },
+    { title: "본사 확인", desc: "본사가 주문을 확인하고 출고를 준비합니다" },
+    { title: "출고 · 배송", desc: "개체(시리얼)가 배정되어 매장으로 이동 중입니다" },
+    { title: "입고 완료", desc: "매장에서 수령을 확인했습니다" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end">
+      <div className="absolute inset-0 bg-slate-900/45" onClick={onClose} aria-hidden />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="주문 진행 상황"
+        className="relative w-full lg:w-[480px] lg:h-full mt-auto lg:mt-0 bg-white lg:border-l border-line rounded-t-3xl lg:rounded-none shadow-2xl overflow-y-auto max-h-[88%] lg:max-h-full flex flex-col"
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-line">
+          <div>
+            <div className="text-xs font-semibold text-caption uppercase">{id.slice(0, 8)}</div>
+            <h2 className="text-lg font-extrabold m-0">주문 진행 상황</h2>
+          </div>
+          <button
+            aria-label="닫기"
+            onClick={onClose}
+            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-line grid place-items-center text-body"
+          >
+            <XIcon className="w-[18px] h-[18px]" />
+          </button>
+        </div>
+
+        <div className="p-6 flex flex-col gap-5">
+          {loading ? (
+            <div className="h-40 rounded-2xl bg-slate-100 animate-pulse" />
+          ) : loadError || !detail ? (
+            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <AlertCircleIcon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-sm leading-relaxed text-red-700 m-0 font-medium">
+                {loadError ?? "주문 정보를 불러오지 못했습니다."}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-surface border border-line rounded-2xl px-[18px] py-4 flex flex-col gap-1.5">
+                <div className="text-sm font-bold">{detail.productName}</div>
+                <div className="text-xs text-caption tabular-nums">
+                  {detail.quantity}개 × {won(detail.unitPrice)} = {won(detail.totalAmount)} ·{" "}
+                  {kstDateLabel(detail.createdAt)} 주문
+                  {detail.memo ? ` · ${detail.memo}` : ""}
+                </div>
+              </div>
+
+              {canceled ? (
+                <div className="bg-slate-50 border border-line rounded-2xl px-[18px] py-4 text-sm text-body leading-relaxed">
+                  취소된 주문입니다. 다시 필요하면 카탈로그에서 새로 주문해주세요.
+                </div>
+              ) : (
+                <div className="flex flex-col">
+                  {STEPS.map((s, i) => {
+                    const done = i < currentStep;
+                    const active = i === currentStep;
+                    return (
+                      <div key={s.title} className="flex gap-3.5">
+                        <div className="flex flex-col items-center">
+                          <span
+                            className={`w-7 h-7 rounded-full grid place-items-center text-xs font-extrabold shrink-0 ${
+                              done
+                                ? "bg-green-500 text-white"
+                                : active
+                                  ? "bg-primary text-white"
+                                  : "bg-slate-100 border border-line text-caption"
+                            }`}
+                          >
+                            {done ? "✓" : i + 1}
+                          </span>
+                          {i < STEPS.length - 1 && (
+                            <span className={`w-0.5 flex-1 min-h-6 ${done ? "bg-green-400" : "bg-line"}`} />
+                          )}
+                        </div>
+                        <div className="pb-5">
+                          <div className={`text-sm font-bold ${active ? "text-primary" : done ? "" : "text-caption"}`}>
+                            {s.title}
+                            {active && <span className="ml-2 text-[11px] font-extrabold text-white bg-primary rounded-full px-2 py-0.5">진행중</span>}
+                          </div>
+                          <div className="text-xs text-caption leading-relaxed mt-0.5">{s.desc}</div>
+                          {i === 2 && detail.items.length > 0 && (
+                            <div className="text-xs font-semibold text-body mt-1 tabular-nums">
+                              배정 {detail.items.length}개 · 배송중 {shippedCount} · 입고 확인 {deliveredCount}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {detail.items.length > 0 && (
+                <div className="flex flex-col gap-2.5">
+                  <h3 className="text-sm font-extrabold text-body m-0">배정된 개체 (시리얼)</h3>
+                  <div className="bg-white border border-line rounded-2xl overflow-hidden">
+                    {detail.items.map((it) => (
+                      <div
+                        key={it.serial}
+                        className="flex items-center gap-3 px-[18px] py-3 border-t border-line first:border-t-0"
+                      >
+                        <div className="flex-1 text-sm font-bold tabular-nums">{it.serial}</div>
+                        {it.receivedAt && (
+                          <div className="text-xs text-caption">{kstDateLabel(it.receivedAt)} 수령</div>
+                        )}
+                        <Badge tone={(ITEM_STATUS_META[it.status] ?? { tone: "slate" as const }).tone} className="shrink-0">
+                          {ITEM_STATUS_META[it.status]?.label ?? it.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!canceled && detail.items.length === 0 && detail.status !== "COMPLETED" && (
+                <div className="text-xs text-caption leading-relaxed">
+                  아직 배정된 개체가 없습니다 — 본사 출고 준비가 시작되면 시리얼별 진행 상태가 여기에
+                  표시됩니다.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
