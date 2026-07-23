@@ -42,7 +42,7 @@ export function Sidebar({ storeName, tier }: SidebarProps) {
             {item.label}
             {item.tierOnly && (
               <span className="ml-auto text-[10px] font-bold text-primary bg-orange-50 border border-orange-100 rounded-full px-2 py-0.5">
-                도매
+                {tier === "SUPER_WHOLESALE" ? "도도매" : "도매"}
               </span>
             )}
           </Link>
