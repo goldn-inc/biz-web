@@ -378,18 +378,20 @@ export default function DashboardPage() {
             )}
           </section>
         )}
+
+        {/* 신상품은 스크롤 없이 보이도록 그리드 빈칸(오늘의 거래 아래)에 배치 */}
+        {wholesale && (
+          <ProductRail title="신상품" products={newest} emptyDesc="새로 등록된 상품이 없습니다." />
+        )}
       </div>
 
       {wholesale && (
-        <>
-          <ProductRail title="신상품" products={newest} emptyDesc="새로 등록된 상품이 없습니다." />
-          <ProductRail
-            title="잘 팔리는 제품"
-            products={popular}
-            showOrderCount
-            emptyDesc="발주 데이터가 쌓이면 인기 상품이 표시됩니다."
-          />
-        </>
+        <ProductRail
+          title="잘 팔리는 제품"
+          products={popular}
+          showOrderCount
+          emptyDesc="발주 데이터가 쌓이면 인기 상품이 표시됩니다."
+        />
       )}
 
       {/* 원페이지 매입 모달 — 접수 완료 시 이어서 감정·완료(DetailPanel)까지 대시보드에서 처리 */}
