@@ -394,13 +394,7 @@ export default function DashboardPage() {
               aria-label="현장 매입 등록"
               className="w-full max-w-5xl bg-surface rounded-3xl shadow-2xl p-5 md:p-7 flex flex-col gap-5 relative"
             >
-              <button
-                aria-label="닫기"
-                onClick={() => setPurchaseOpen(false)}
-                className="absolute top-4 right-4 md:top-5 md:right-5 w-10 h-10 rounded-xl bg-white border border-line hover:bg-slate-100 grid place-items-center text-body z-10"
-              >
-                <XIcon className="w-[18px] h-[18px]" />
-              </button>
+              {/* 닫기는 RegistrationForm 헤더의 cancelLabel("닫기") 버튼 하나만 사용 — X 중복 제거 */}
               <RegistrationForm
                 token={token}
                 reservationId={null}

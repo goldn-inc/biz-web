@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   GemIcon,
   MinusIcon,
@@ -8,7 +8,7 @@ import {
   WholesaleIcon,
   CheckIcon,
   AlertCircleIcon,
-  XIcon,
+  ChevronRightIcon,
 } from "@/components/icons";
 import { Badge, Button, FilterChip } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
@@ -46,9 +46,9 @@ type ApiOrder = {
   updatedAt: string;
 };
 
-/** GET /biz/wholesale/orders/:id — 진행 스테퍼용 개체(시리얼) 상태 포함. */
+/** GET /biz/wholesale/orders/:id — 진행 스테퍼용 개체(시리얼) 상태 + 협력공장(supplierRef) 포함. */
 type ApiOrderDetail = ApiOrder & {
-  items: { serial: string; status: string; receivedAt: string | null }[];
+  items: { serial: string; status: string; receivedAt: string | null; supplierRef: string | null }[];
 };
 
 /** products.category → 한국어 라벨. */
@@ -530,7 +530,7 @@ function OrderHistory({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   async function cancelOrder(order: ApiOrder) {
     setBusyId(order.id);
@@ -572,50 +572,63 @@ function OrderHistory({
         </div>
       )}
       <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden">
-        {orders.map((o) => (
-          <div
-            key={o.id}
-            className="flex items-center gap-4 flex-wrap px-4 md:px-5 py-3.5 border-t border-slate-100 first:border-t-0"
-          >
-            <div className="w-24 shrink-0">
-              <div className="text-sm font-extrabold tabular-nums uppercase">{o.id.slice(0, 8)}</div>
-              <div className="text-xs text-caption">{kstDateLabel(o.createdAt)}</div>
-            </div>
-            <div className="flex-[2] min-w-40">
-              <div className="text-sm font-bold truncate">{o.productName}</div>
-              <div className="text-xs text-caption tabular-nums">
-                {o.quantity}개 × {won(o.unitPrice)}
-                {o.memo ? ` · ${o.memo}` : ""}
-              </div>
-            </div>
-            <div className="flex-1 min-w-28 text-right text-sm font-extrabold tabular-nums">
-              {o.status === "CANCELED" ? "—" : won(o.totalAmount)}
-            </div>
-            <Badge tone={STATUS_META[o.status].tone} className="shrink-0">
-              {STATUS_META[o.status].label}
-            </Badge>
-            <button
-              onClick={() => setDetailId(o.id)}
-              className="shrink-0 h-9 px-3.5 rounded-xl bg-white border border-line hover:border-primary-light hover:text-primary text-body text-xs font-semibold"
-            >
-              진행 상황
-            </button>
-            {o.status === "REQUESTED" && (
-              <button
-                onClick={() => void cancelOrder(o)}
-                disabled={busyId === o.id}
-                className="shrink-0 h-9 px-3.5 rounded-xl bg-white border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold disabled:opacity-50"
+        {orders.map((o) => {
+          const expanded = expandedId === o.id;
+          return (
+            <div key={o.id} className="border-t border-slate-100 first:border-t-0">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={() => setExpandedId(expanded ? null : o.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpandedId(expanded ? null : o.id);
+                  }
+                }}
+                className={`flex items-center gap-4 flex-wrap px-4 md:px-5 py-3.5 w-full text-left cursor-pointer transition ${
+                  expanded ? "bg-orange-50/50" : "hover:bg-orange-50/30"
+                }`}
               >
-                취소
-              </button>
-            )}
-          </div>
-        ))}
+                <ChevronRightIcon
+                  className={`w-4 h-4 shrink-0 text-caption transition-transform ${expanded ? "rotate-90 text-primary" : ""}`}
+                />
+                <div className="w-24 shrink-0">
+                  <div className="text-sm font-extrabold tabular-nums uppercase">{o.id.slice(0, 8)}</div>
+                  <div className="text-xs text-caption">{kstDateLabel(o.createdAt)}</div>
+                </div>
+                <div className="flex-[2] min-w-40">
+                  <div className="text-sm font-bold truncate">{o.productName}</div>
+                  <div className="text-xs text-caption tabular-nums">
+                    {o.quantity}개 × {won(o.unitPrice)}
+                    {o.memo ? ` · ${o.memo}` : ""}
+                  </div>
+                </div>
+                <div className="flex-1 min-w-28 text-right text-sm font-extrabold tabular-nums">
+                  {o.status === "CANCELED" ? "—" : won(o.totalAmount)}
+                </div>
+                <Badge tone={STATUS_META[o.status].tone} className="shrink-0">
+                  {STATUS_META[o.status].label}
+                </Badge>
+                {o.status === "REQUESTED" && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void cancelOrder(o);
+                    }}
+                    disabled={busyId === o.id}
+                    className="shrink-0 h-9 px-3.5 rounded-xl bg-white border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold disabled:opacity-50"
+                  >
+                    취소
+                  </button>
+                )}
+              </div>
+              {expanded && <OrderExpandedDetail order={o} token={token} />}
+            </div>
+          );
+        })}
       </div>
-
-      {detailId && (
-        <OrderProgressPanel token={token} id={detailId} onClose={() => setDetailId(null)} />
-      )}
     </>
   );
 }
@@ -629,18 +642,13 @@ const ITEM_STATUS_META: Record<string, { label: string; tone: "slate" | "blue" |
   VOID: { label: "폐기", tone: "slate" },
 };
 
-/** 주문 진행 슬라이드오버 — 접수→본사 확인→출고·배송→입고 완료 스테퍼 + 개체(시리얼)별 상태. */
-function OrderProgressPanel({
-  token,
-  id,
-  onClose,
-}: {
-  token: string | null;
-  id: string;
-  onClose: () => void;
-}) {
+/**
+ * 주문 행 아래 인라인 상세(아코디언) — 상품 이미지·단가/총액·협력공장·진행 스테퍼·
+ * 개체(시리얼) 목록을 한 번에 보여준다. 상세는 처음 펼칠 때 1회 조회.
+ */
+function OrderExpandedDetail({ order, token }: { order: ApiOrder; token: string | null }) {
   const [result, setResult] = useState<{ key: string; detail?: ApiOrderDetail; error?: string } | null>(null);
-  const loading = result?.key !== id;
+  const loading = result?.key !== order.id;
   const detail = !loading ? result?.detail : undefined;
   const loadError = !loading ? (result?.error ?? null) : null;
 
@@ -648,12 +656,12 @@ function OrderProgressPanel({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await bizApiFetch<ApiOrderDetail>(`/biz/wholesale/orders/${id}`, { token });
-        if (!cancelled) setResult({ key: id, detail: res });
+        const res = await bizApiFetch<ApiOrderDetail>(`/biz/wholesale/orders/${order.id}`, { token });
+        if (!cancelled) setResult({ key: order.id, detail: res });
       } catch (e) {
         if (!cancelled) {
           setResult({
-            key: id,
+            key: order.id,
             error: e instanceof BizApiError ? e.message : "주문 정보를 불러오지 못했습니다.",
           });
         }
@@ -662,7 +670,7 @@ function OrderProgressPanel({
     return () => {
       cancelled = true;
     };
-  }, [id, token]);
+  }, [order.id, token]);
 
   // 진행 단계: 접수(발주 즉시 완료) → 제작 중 → 배송중 → 입고 완료.
   // 제작완료(개체 배정=RESERVED)는 제작 중 단계의 카운트로 보여준다.
@@ -678,145 +686,234 @@ function OrderProgressPanel({
         : 1;
   const canceled = detail?.status === "CANCELED";
 
+  // 협력공장 요약 — supplierRef 별 개수(미지정은 집계에서 제외)
+  const factoryCounts = new Map<string, number>();
+  for (const it of detail?.items ?? []) {
+    if (it.supplierRef) factoryCounts.set(it.supplierRef, (factoryCounts.get(it.supplierRef) ?? 0) + 1);
+  }
+  const factorySummary = Array.from(factoryCounts.entries())
+    .map(([name, count]) => `${name} ${count}개`)
+    .join(" · ");
+
+  const tierLabel = detail?.tierAtOrder === "SUPER_WHOLESALE" ? "도도매 등급가" : "도매 등급가";
+
   const STEPS = [
-    { title: "주문 접수", desc: "발주가 접수되었습니다" },
+    { title: "주문 접수", desc: "발주 접수됨", count: null as string | null },
     {
       title: "제작 중",
-      desc:
-        detail?.status === "REQUESTED"
-          ? "본사 확인 대기 중 — 확인되는 대로 제작·조달이 시작됩니다"
-          : "본사가 제작·조달을 진행하고 있습니다",
+      desc: detail?.status === "REQUESTED" ? "본사 확인 대기" : "제작·조달 진행",
+      count: reservedCount > 0 ? `출고 준비 ${reservedCount}개` : null,
     },
-    { title: "배송중", desc: "출고되어 매장으로 이동 중입니다 — 수령 시 바코드를 스캔해주세요" },
-    { title: "입고 완료", desc: "매장 바코드 스캔으로 수령이 확인되었습니다" },
+    {
+      title: "배송중",
+      desc: "매장으로 이동",
+      count: shippedCount > 0 ? `배송중 ${shippedCount}개` : null,
+    },
+    {
+      title: "입고 완료",
+      desc: "바코드 스캔 확인",
+      count: deliveredCount > 0 ? `입고 ${deliveredCount}개` : null,
+    },
   ];
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-slate-900/45" onClick={onClose} aria-hidden />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="주문 진행 상황"
-        className="relative w-full lg:w-[480px] lg:h-full mt-auto lg:mt-0 bg-white lg:border-l border-line rounded-t-3xl lg:rounded-none shadow-2xl overflow-y-auto max-h-[88%] lg:max-h-full flex flex-col"
-      >
-        <div className="flex items-center justify-between px-6 py-5 border-b border-line">
-          <div>
-            <div className="text-xs font-semibold text-caption uppercase">{id.slice(0, 8)}</div>
-            <h2 className="text-lg font-extrabold m-0">주문 진행 상황</h2>
-          </div>
-          <button
-            aria-label="닫기"
-            onClick={onClose}
-            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-line grid place-items-center text-body"
-          >
-            <XIcon className="w-[18px] h-[18px]" />
-          </button>
+    <div className="border-t border-orange-100 bg-gradient-to-b from-orange-50/70 via-orange-50/20 to-white px-4 md:px-6 py-5 md:py-6">
+      {loading ? (
+        <div className="flex flex-col gap-4">
+          <div className="h-44 rounded-2xl bg-slate-100 animate-pulse" />
+          <div className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
         </div>
-
-        <div className="p-6 flex flex-col gap-5">
-          {loading ? (
-            <div className="h-40 rounded-2xl bg-slate-100 animate-pulse" />
-          ) : loadError || !detail ? (
-            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <AlertCircleIcon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              <p className="text-sm leading-relaxed text-red-700 m-0 font-medium">
-                {loadError ?? "주문 정보를 불러오지 못했습니다."}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="bg-surface border border-line rounded-2xl px-[18px] py-4 flex flex-col gap-1.5">
-                <div className="text-sm font-bold">{detail.productName}</div>
-                <div className="text-xs text-caption tabular-nums">
-                  {detail.quantity}개 × {won(detail.unitPrice)} = {won(detail.totalAmount)} ·{" "}
-                  {kstDateLabel(detail.createdAt)} 주문
-                  {detail.memo ? ` · ${detail.memo}` : ""}
-                </div>
+      ) : loadError || !detail ? (
+        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <AlertCircleIcon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <p className="text-sm leading-relaxed text-red-700 m-0 font-medium">
+            {loadError ?? "주문 정보를 불러오지 못했습니다."}
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4 md:gap-5">
+          {/* ── 상단: 이미지 · 주문 스펙 · 금액 요약 ─────────────────────── */}
+          <div className="flex gap-4 md:gap-5 flex-wrap items-stretch">
+            <div className="w-44 md:w-52 shrink-0">
+              <div className="h-full min-h-44 rounded-2xl bg-amber-100/60 grid place-items-center text-amber-600/50 overflow-hidden border border-line shadow-sm">
+                {detail.productImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- 외부(R2) 이미지, 크기 미고정
+                  <img
+                    src={detail.productImageUrl}
+                    alt={detail.productName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <GemIcon className="w-12 h-12" />
+                )}
               </div>
+            </div>
 
-              {canceled ? (
-                <div className="bg-slate-50 border border-line rounded-2xl px-[18px] py-4 text-sm text-body leading-relaxed">
-                  취소된 주문입니다. 다시 필요하면 카탈로그에서 새로 주문해주세요.
-                </div>
-              ) : (
-                <div className="flex flex-col">
-                  {STEPS.map((s, i) => {
-                    const done = i < currentStep;
-                    const active = i === currentStep;
-                    return (
-                      <div key={s.title} className="flex gap-3.5">
-                        <div className="flex flex-col items-center">
-                          <span
-                            className={`w-7 h-7 rounded-full grid place-items-center text-xs font-extrabold shrink-0 ${
-                              done
-                                ? "bg-green-500 text-white"
-                                : active
-                                  ? "bg-primary text-white"
-                                  : "bg-slate-100 border border-line text-caption"
-                            }`}
-                          >
-                            {done ? "✓" : i + 1}
-                          </span>
-                          {i < STEPS.length - 1 && (
-                            <span className={`w-0.5 flex-1 min-h-6 ${done ? "bg-green-400" : "bg-line"}`} />
-                          )}
-                        </div>
-                        <div className="pb-5">
-                          <div className={`text-sm font-bold ${active ? "text-primary" : done ? "" : "text-caption"}`}>
-                            {s.title}
-                            {active && <span className="ml-2 text-[11px] font-extrabold text-white bg-primary rounded-full px-2 py-0.5">진행중</span>}
-                          </div>
-                          <div className="text-xs text-caption leading-relaxed mt-0.5">{s.desc}</div>
-                          {i === 1 && reservedCount > 0 && (
-                            <div className="text-xs font-semibold text-body mt-1 tabular-nums">
-                              제작완료 · 출고 준비 {reservedCount}개
-                            </div>
-                          )}
-                          {i === 2 && shippedCount + deliveredCount > 0 && (
-                            <div className="text-xs font-semibold text-body mt-1 tabular-nums">
-                              배송중 {shippedCount} · 입고 확인 {deliveredCount} / 총 {detail.quantity}개
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {detail.items.length > 0 && (
-                <div className="flex flex-col gap-2.5">
-                  <h3 className="text-sm font-extrabold text-body m-0">배정된 개체 (시리얼)</h3>
-                  <div className="bg-white border border-line rounded-2xl overflow-hidden">
-                    {detail.items.map((it) => (
-                      <div
-                        key={it.serial}
-                        className="flex items-center gap-3 px-[18px] py-3 border-t border-line first:border-t-0"
-                      >
-                        <div className="flex-1 text-sm font-bold tabular-nums">{it.serial}</div>
-                        {it.receivedAt && (
-                          <div className="text-xs text-caption">{kstDateLabel(it.receivedAt)} 수령</div>
-                        )}
-                        <Badge tone={(ITEM_STATUS_META[it.status] ?? { tone: "slate" as const }).tone} className="shrink-0">
-                          {ITEM_STATUS_META[it.status]?.label ?? it.status}
-                        </Badge>
-                      </div>
-                    ))}
+            <div className="flex-[2.2] min-w-80 bg-white border border-line rounded-2xl shadow-sm p-5 flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-base font-extrabold leading-snug">{detail.productName}</div>
+                  <div className="text-xs text-caption mt-1 tabular-nums">
+                    주문번호 <span className="font-bold text-body uppercase">{detail.id.slice(0, 8)}</span>
+                    {" · "}
+                    {kstDateLabel(detail.createdAt)} 주문
                   </div>
                 </div>
-              )}
+                <Badge tone={STATUS_META[detail.status].tone} className="shrink-0 px-3 py-1">
+                  {STATUS_META[detail.status].label}
+                </Badge>
+              </div>
 
-              {!canceled && detail.items.length === 0 && detail.status !== "COMPLETED" && (
-                <div className="text-xs text-caption leading-relaxed">
-                  아직 배정된 개체가 없습니다 — 본사 출고 준비가 시작되면 시리얼별 진행 상태가 여기에
-                  표시됩니다.
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <SpecCell label="단가" value={won(detail.unitPrice)} sub={tierLabel} />
+                <SpecCell label="수량" value={`${detail.quantity}개`} />
+                <SpecCell
+                  label="입고 진행"
+                  value={`${deliveredCount} / ${detail.quantity}개`}
+                  sub={detail.items.length > 0 ? `개체 ${detail.items.length}개 배정` : "배정 전"}
+                />
+                <SpecCell
+                  label="협력공장"
+                  value={factorySummary || "—"}
+                  sub={factorySummary ? undefined : "개체 배정 후 표시"}
+                />
+              </div>
+
+              {detail.memo && (
+                <div className="bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs text-body leading-relaxed">
+                  <span className="font-extrabold text-caption mr-1.5">요청사항</span>
+                  {detail.memo}
                 </div>
               )}
-            </>
+            </div>
+
+            <div className="flex-1 min-w-56 bg-white border-2 border-orange-100 rounded-2xl shadow-lg shadow-primary/5 p-5 flex flex-col justify-center gap-2.5">
+              <div className="text-[11px] font-extrabold text-primary">{tierLabel}</div>
+              <div className="flex justify-between gap-2 text-xs">
+                <span className="text-caption tabular-nums">
+                  {won(detail.unitPrice)} × {detail.quantity}개
+                </span>
+              </div>
+              <div className="border-t border-dashed border-orange-200 pt-2.5">
+                <div className="text-xs font-bold text-body">총 주문 금액</div>
+                <div className="text-2xl font-extrabold text-primary tabular-nums leading-tight">
+                  {won(detail.totalAmount)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 진행 스테퍼(가로) ────────────────────────────────────────── */}
+          {canceled ? (
+            <div className="bg-slate-50 border border-line rounded-2xl px-5 py-4 text-sm text-body leading-relaxed">
+              취소된 주문입니다. 다시 필요하면 카탈로그에서 새로 주문해주세요.
+            </div>
+          ) : (
+            <div className="bg-white border border-line rounded-2xl shadow-sm px-5 md:px-8 py-5">
+              <div className="flex items-start">
+                {STEPS.map((s, i) => {
+                  const done = i < currentStep;
+                  const active = i === currentStep;
+                  return (
+                    <Fragment key={s.title}>
+                      {i > 0 && (
+                        <div
+                          className={`flex-1 h-[3px] rounded-full mt-[15px] mx-1.5 md:mx-3 ${
+                            i <= currentStep ? "bg-green-400" : "bg-line"
+                          }`}
+                        />
+                      )}
+                      <div className="flex flex-col items-center gap-1.5 w-20 md:w-28 shrink-0 text-center">
+                        <span
+                          className={`w-8 h-8 rounded-full grid place-items-center text-xs font-extrabold ${
+                            done
+                              ? "bg-green-500 text-white"
+                              : active
+                                ? "bg-primary text-white ring-4 ring-orange-100"
+                                : "bg-slate-100 border border-line text-caption"
+                          }`}
+                        >
+                          {done ? "✓" : i + 1}
+                        </span>
+                        <div
+                          className={`text-xs font-extrabold leading-tight ${
+                            active ? "text-primary" : done ? "text-body" : "text-caption"
+                          }`}
+                        >
+                          {s.title}
+                        </div>
+                        <div className="text-[10.5px] text-caption leading-tight hidden md:block">{s.desc}</div>
+                        {s.count && (
+                          <span className="text-[10.5px] font-extrabold text-primary bg-orange-50 border border-orange-100 rounded-full px-2 py-0.5 tabular-nums">
+                            {s.count}
+                          </span>
+                        )}
+                      </div>
+                    </Fragment>
+                  );
+                })}
+              </div>
+            </div>
           )}
+
+          {/* ── 개체(시리얼) 테이블 — 공장·수령일·상태 ──────────────────── */}
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="text-sm font-extrabold text-body m-0">배정된 개체 (시리얼)</h3>
+              {detail.items.length > 0 && (
+                <span className="text-[11px] font-bold text-caption bg-slate-100 rounded-full px-2.5 py-0.5 tabular-nums">
+                  {detail.items.length}개 배정 / 주문 {detail.quantity}개
+                </span>
+              )}
+            </div>
+            {detail.items.length === 0 ? (
+              <div className="bg-white border border-dashed border-slate-300 rounded-2xl px-5 py-6 text-xs text-caption leading-relaxed text-center">
+                아직 배정된 개체가 없습니다 — 본사 출고 준비가 시작되면 시리얼·공장별 진행 상태가
+                여기에 표시됩니다.
+              </div>
+            ) : (
+              <div className="bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
+                <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_minmax(0,1fr)_92px] gap-3 px-5 py-2.5 bg-surface border-b border-line text-[11px] font-extrabold text-caption">
+                  <span>시리얼</span>
+                  <span>협력공장</span>
+                  <span>수령일</span>
+                  <span className="text-right">상태</span>
+                </div>
+                {detail.items.map((it) => (
+                  <div
+                    key={it.serial}
+                    className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_minmax(0,1fr)_92px] gap-3 items-center px-5 py-3 border-t border-slate-100 first:border-t-0 hover:bg-orange-50/30 transition"
+                  >
+                    <span className="text-[13px] font-bold tabular-nums truncate">{it.serial}</span>
+                    <span className={`text-xs truncate ${it.supplierRef ? "font-semibold text-body" : "text-caption"}`}>
+                      {it.supplierRef ?? "미지정"}
+                    </span>
+                    <span className="text-xs text-caption tabular-nums">
+                      {it.receivedAt ? `${kstDateLabel(it.receivedAt)} 수령` : "—"}
+                    </span>
+                    <span className="text-right">
+                      <Badge tone={(ITEM_STATUS_META[it.status] ?? { tone: "slate" as const }).tone}>
+                        {ITEM_STATUS_META[it.status]?.label ?? it.status}
+                      </Badge>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
+
+/** 인라인 상세의 스펙 셀 — 라벨·값·보조설명 한 칸. */
+function SpecCell({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="bg-surface border border-line rounded-xl px-3.5 py-2.5 min-w-0">
+      <div className="text-[10.5px] font-extrabold text-caption">{label}</div>
+      <div className="text-[13px] font-extrabold tabular-nums truncate mt-0.5">{value}</div>
+      {sub && <div className="text-[10.5px] text-caption truncate mt-0.5">{sub}</div>}
     </div>
   );
 }

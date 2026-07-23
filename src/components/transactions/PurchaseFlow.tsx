@@ -742,6 +742,7 @@ export function RegistrationForm({
 
   const nameError = showErrors && name.trim() === "";
   const phoneError = showErrors && onlyDigits(phone).length < 8;
+  const idVerifyError = showErrors && !visualChecked;
 
   async function handleLookup() {
     const digits = onlyDigits(lookupPhone);
@@ -770,7 +771,8 @@ export function RegistrationForm({
   }
 
   async function handleSubmit() {
-    if (name.trim() === "" || onlyDigits(phone).length < 8) {
+    // 특금법 실명확인 — 신분증 육안 확인 체크 없이는 접수 불가(백엔드도 동일 게이트).
+    if (name.trim() === "" || onlyDigits(phone).length < 8 || !visualChecked) {
       setShowErrors(true);
       return;
     }
@@ -926,7 +928,11 @@ export function RegistrationForm({
               </div>
             </div>
 
-            <label className="flex items-start gap-2.5 bg-surface border border-line rounded-2xl px-4 py-3.5 cursor-pointer">
+            <label
+              className={`flex items-start gap-2.5 bg-surface border rounded-2xl px-4 py-3.5 cursor-pointer ${
+                idVerifyError ? "border-red-300 bg-red-50/40" : "border-line"
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={visualChecked}
@@ -934,7 +940,9 @@ export function RegistrationForm({
                 className="w-5 h-5 accent-primary mt-0.5"
               />
               <span className="text-sm leading-relaxed text-body">
-                <span className="font-bold text-ink">신분증 육안 확인 완료</span>
+                <span className="font-bold text-ink">
+                  신분증 육안 확인 완료 <span className="text-primary">*</span>
+                </span>
                 <br />
                 실물 신분증과 고객 실명이 일치함을 확인했습니다.{" "}
                 <span className="text-caption">
@@ -942,6 +950,12 @@ export function RegistrationForm({
                 </span>
               </span>
             </label>
+            {idVerifyError && (
+              <div className="flex items-center gap-1 text-xs font-semibold text-red-600">
+                <AlertCircleIcon className="w-3.5 h-3.5" />
+                신분증 육안 확인을 완료해야 접수할 수 있습니다.
+              </div>
+            )}
           </Card>
 
           <Card className="flex flex-col gap-4">
