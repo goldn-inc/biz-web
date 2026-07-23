@@ -104,19 +104,19 @@ export default function DashboardPage() {
             ? bizApiFetch<{ orders: ApiOrder[] }>("/biz/wholesale/orders", { token })
             : Promise.resolve({ orders: [] as ApiOrder[] }),
           wholesale
-            ? bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products?sort=newest&limit=10", { token })
+            ? bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products?sort=newest&limit=5", { token })
             : Promise.resolve(emptyProducts),
           wholesale
-            ? bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products?sort=popular&limit=10", { token })
+            ? bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products?sort=popular&limit=5", { token })
             : Promise.resolve(emptyProducts),
         ]);
         if (!alive) return;
         setReservations(resv.reservations);
         setTransactions(tx.transactions);
         setOrders(ord.orders);
-        // 구백엔드는 limit 파라미터를 무시하므로 클라이언트에서도 10개 상한.
-        setNewest(newestRes.products.slice(0, 10));
-        setPopular(popularRes.products.slice(0, 10));
+        // 구백엔드는 limit 파라미터를 무시하므로 클라이언트에서도 5개 상한(레일 끝은 더 보러가기 카드).
+        setNewest(newestRes.products.slice(0, 5));
+        setPopular(popularRes.products.slice(0, 5));
         setError(null);
       } catch {
         if (!alive) return;
@@ -405,6 +405,16 @@ function ProductRail({
               </div>
             </Link>
           ))}
+          {/* 레일 끝 — 더 보러가기 카드 */}
+          <Link
+            href="/wholesale"
+            className="w-[148px] shrink-0 aspect-[4/3] self-start rounded-2xl border border-line bg-surface hover:border-primary-light flex flex-col items-center justify-center gap-2 group"
+          >
+            <span className="w-9 h-9 rounded-full bg-orange-50 grid place-items-center text-primary">
+              <ChevronRightIcon className="w-4 h-4" />
+            </span>
+            <span className="text-xs font-bold text-body group-hover:text-primary">더 보러가기</span>
+          </Link>
         </div>
       )}
     </section>
