@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon, XIcon } from "@/components/icons";
 import { Badge } from "@/components/ui";
@@ -501,12 +501,18 @@ function ProductTabsCard({
   popular: ApiProduct[] | null;
 }) {
   const [tab, setTab] = useState<"newest" | "popular">("newest");
+  const railRef = useRef<HTMLDivElement>(null);
   const products = tab === "newest" ? newest : popular;
   const showOrderCount = tab === "popular";
   const emptyDesc =
     tab === "newest"
       ? "새로 등록된 상품이 없습니다."
       : "발주 데이터가 쌓이면 인기 상품이 표시됩니다.";
+
+  /** 좌우 화살표 버튼 — 카드 2장 폭만큼 부드럽게 이동 */
+  function scrollRail(dir: 1 | -1) {
+    railRef.current?.scrollBy({ left: dir * 324, behavior: "smooth" });
+  }
 
   return (
     <section className="bg-white border border-line rounded-3xl shadow-sm p-5 md:p-6 flex flex-col gap-4">
@@ -542,7 +548,8 @@ function ProductTabsCard({
       ) : products.length === 0 ? (
         <EmptyState icon={<WholesaleIcon className="w-6 h-6" />} title="상품이 없습니다" desc={emptyDesc} />
       ) : (
-        <div className="flex gap-3.5 overflow-x-auto pb-1 -mx-1 px-1">
+        <div className="relative">
+          <div ref={railRef} className="no-scrollbar flex gap-3.5 overflow-x-auto pb-1 -mx-1 px-1">
           {products.map((p) => (
             <Link
               key={p.id}
@@ -581,6 +588,23 @@ function ProductTabsCard({
             </span>
             <span className="text-xs font-bold text-body group-hover:text-primary">더 보러가기</span>
           </Link>
+          </div>
+
+          {/* 좌우 이동 화살표 — 스크롤바 대신 사용 */}
+          <button
+            aria-label="이전 상품"
+            onClick={() => scrollRail(-1)}
+            className="absolute -left-2 top-[34%] w-9 h-9 rounded-full bg-white border border-line shadow-md grid place-items-center text-body hover:text-primary hover:border-primary-light"
+          >
+            <ChevronRightIcon className="w-4 h-4 rotate-180" />
+          </button>
+          <button
+            aria-label="다음 상품"
+            onClick={() => scrollRail(1)}
+            className="absolute -right-2 top-[34%] w-9 h-9 rounded-full bg-white border border-line shadow-md grid place-items-center text-body hover:text-primary hover:border-primary-light"
+          >
+            <ChevronRightIcon className="w-4 h-4" />
+          </button>
         </div>
       )}
     </section>

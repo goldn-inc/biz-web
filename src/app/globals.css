@@ -94,3 +94,12 @@ button {
 .d4 {
   animation-delay: 0.28s;
 }
+
+/* 가로 상품 레일 스크롤바 숨김 — 좌우 화살표 버튼으로 탐색 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
