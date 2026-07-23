@@ -275,13 +275,16 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
         <ErrorState message={loadError} onRetry={refresh} />
       ) : tab === "catalog" ? (
         <>
-          <div className="flex gap-2 flex-wrap">
-            {categories.map((c) => (
-              <FilterChip key={c} active={category === c} onClick={() => setCategory(c)}>
-                {c === "전체" ? "전체" : (CATEGORY_LABEL[c] ?? c)}
-              </FilterChip>
-            ))}
-          </div>
+          {/* 카테고리가 1종뿐이면 전체/단일 필터는 군더더기 — 2종 이상일 때만 노출 */}
+          {categories.length > 2 ? (
+            <div className="flex gap-2 flex-wrap">
+              {categories.map((c) => (
+                <FilterChip key={c} active={category === c} onClick={() => setCategory(c)}>
+                  {c === "전체" ? "전체" : (CATEGORY_LABEL[c] ?? c)}
+                </FilterChip>
+              ))}
+            </div>
+          ) : null}
 
           {visibleProducts.length === 0 ? (
             <div className="bg-white border border-line rounded-3xl shadow-sm p-10 flex flex-col items-center gap-3 text-center">
