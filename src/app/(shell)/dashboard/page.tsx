@@ -41,6 +41,16 @@ type ApiOrder = {
   createdAt: string;
 };
 
+/** GET /biz/wholesale/products 항목(홈 레일용 최소 필드). orderCount 는 구백엔드 미배포 시 없음. */
+type ApiProduct = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  unitPrice: number;
+  stock: number;
+  orderCount?: number;
+};
+
 const RESERVATION_BADGE: Partial<Record<ReservationStatus, { label: string; tone: "green" | "amber" | "slate" | "violet" }>> = {
   PENDING: { label: "대기중", tone: "amber" },
   WAITLISTED: { label: "대기목록", tone: "violet" },
@@ -77,6 +87,8 @@ export default function DashboardPage() {
   const [reservations, setReservations] = useState<ApiReservation[] | null>(null);
   const [transactions, setTransactions] = useState<ApiTransaction[] | null>(null);
   const [orders, setOrders] = useState<ApiOrder[] | null>(null);
+  const [newest, setNewest] = useState<ApiProduct[] | null>(null);
+  const [popular, setPopular] = useState<ApiProduct[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -84,17 +96,27 @@ export default function DashboardPage() {
     let alive = true;
     void (async () => {
       try {
-        const [resv, tx, ord] = await Promise.all([
+        const emptyProducts = { products: [] as ApiProduct[] };
+        const [resv, tx, ord, newestRes, popularRes] = await Promise.all([
           bizApiFetch<{ reservations: ApiReservation[] }>("/biz/reservations", { token }),
           bizApiFetch<{ transactions: ApiTransaction[] }>("/biz/transactions", { token }),
           wholesale
             ? bizApiFetch<{ orders: ApiOrder[] }>("/biz/wholesale/orders", { token })
             : Promise.resolve({ orders: [] as ApiOrder[] }),
+          wholesale
+            ? bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products?sort=newest&limit=10", { token })
+            : Promise.resolve(emptyProducts),
+          wholesale
+            ? bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products?sort=popular&limit=10", { token })
+            : Promise.resolve(emptyProducts),
         ]);
         if (!alive) return;
         setReservations(resv.reservations);
         setTransactions(tx.transactions);
         setOrders(ord.orders);
+        // 구백엔드는 limit 파라미터를 무시하므로 클라이언트에서도 10개 상한.
+        setNewest(newestRes.products.slice(0, 10));
+        setPopular(popularRes.products.slice(0, 10));
         setError(null);
       } catch {
         if (!alive) return;
@@ -309,7 +331,83 @@ export default function DashboardPage() {
           </section>
         )}
       </div>
+
+      {wholesale && (
+        <>
+          <ProductRail title="신상품" products={newest} emptyDesc="새로 등록된 상품이 없습니다." />
+          <ProductRail
+            title="잘 팔리는 제품"
+            products={popular}
+            showOrderCount
+            emptyDesc="발주 데이터가 쌓이면 인기 상품이 표시됩니다."
+          />
+        </>
+      )}
     </>
+  );
+}
+
+/** 홈 하단 상품 가로 레일 — 카드 클릭 시 도매 카탈로그로 이동. */
+function ProductRail({
+  title,
+  products,
+  showOrderCount,
+  emptyDesc,
+}: {
+  title: string;
+  products: ApiProduct[] | null;
+  showOrderCount?: boolean;
+  emptyDesc: string;
+}) {
+  return (
+    <section className="bg-white border border-line rounded-3xl shadow-sm p-5 md:p-6 flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold m-0">{title}</h2>
+        <Link
+          href="/wholesale"
+          className="inline-flex items-center gap-1 text-primary text-sm font-semibold px-2 py-1.5 rounded-lg hover:bg-orange-50"
+        >
+          전체보기
+          <ChevronRightIcon className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+      {products === null ? (
+        <LoadingRows />
+      ) : products.length === 0 ? (
+        <EmptyState icon={<WholesaleIcon className="w-6 h-6" />} title="상품이 없습니다" desc={emptyDesc} />
+      ) : (
+        <div className="flex gap-3.5 overflow-x-auto pb-1 -mx-1 px-1">
+          {products.map((p) => (
+            <Link
+              key={p.id}
+              href="/wholesale"
+              className="w-[148px] shrink-0 flex flex-col gap-2 group"
+            >
+              <div className="relative w-full aspect-[4/3] rounded-2xl bg-amber-100/60 grid place-items-center text-amber-600/50 overflow-hidden border border-line">
+                {p.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- 외부(R2) 이미지, 크기 미고정
+                  <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                ) : (
+                  <WholesaleIcon className="w-8 h-8" />
+                )}
+                {showOrderCount && (p.orderCount ?? 0) > 0 ? (
+                  <span className="absolute top-2 right-2 text-[11px] font-bold text-white bg-primary/90 rounded-lg px-2 py-0.5">
+                    발주 {p.orderCount}
+                  </span>
+                ) : null}
+              </div>
+              <div className="text-sm font-semibold truncate group-hover:text-primary">{p.name}</div>
+              <div className="flex items-center justify-between -mt-1">
+                <span className="text-sm font-extrabold tabular-nums">{won(p.unitPrice)}</span>
+                <span className="text-[11px] font-semibold text-caption">
+                  {p.stock > 0 ? `재고 ${p.stock}` : "발주 가능"}
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
