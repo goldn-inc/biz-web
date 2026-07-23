@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon } from "@/components/icons";
+import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon, XIcon } from "@/components/icons";
 import { Badge } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch } from "@/lib/api";
 import { isWholesaleTier, tierLabel } from "@/lib/session";
+import { DetailPanel, RegistrationForm } from "@/components/transactions/PurchaseFlow";
 
 type ReservationStatus = "PENDING" | "WAITLISTED" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 
@@ -91,6 +92,11 @@ export default function DashboardPage() {
   const [popular, setPopular] = useState<ApiProduct[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 원페이지 매입 — 대시보드 위 모달로 접수(RegistrationForm)→감정·완료(DetailPanel)까지 처리.
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseTxId, setPurchaseTxId] = useState<string | null>(null);
+  const [reloadCount, setReloadCount] = useState(0);
+
   useEffect(() => {
     if (!token) return;
     let alive = true;
@@ -126,7 +132,7 @@ export default function DashboardPage() {
     return () => {
       alive = false;
     };
-  }, [token, wholesale]);
+  }, [token, wholesale, reloadCount]);
 
   // 종결(취소·노쇼) 예약은 오늘 카드에서 제외 — 현장 응대 대상만.
   const todayReservations = (reservations ?? []).filter(
@@ -161,13 +167,13 @@ export default function DashboardPage() {
       ) : null}
 
       <div className="flex gap-2.5 flex-wrap">
-        <Link
-          href="/transactions"
+        <button
+          onClick={() => setPurchaseOpen(true)}
           className="h-12 px-5 rounded-2xl bg-primary hover:bg-primary-light text-white text-sm font-bold shadow-lg shadow-primary/20 inline-flex items-center gap-2"
         >
           <PlusIcon className="w-4 h-4" />
           현장 매입 등록
-        </Link>
+        </button>
         <Link
           href="/coupons"
           className="h-12 px-5 rounded-2xl bg-white border border-line hover:border-primary-light hover:text-primary text-body text-sm font-semibold inline-flex items-center gap-2"
@@ -342,6 +348,49 @@ export default function DashboardPage() {
             emptyDesc="발주 데이터가 쌓이면 인기 상품이 표시됩니다."
           />
         </>
+      )}
+
+      {/* 원페이지 매입 모달 — 접수 완료 시 이어서 감정·완료(DetailPanel)까지 대시보드에서 처리 */}
+      {purchaseOpen && (
+        <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-900/45">
+          <div className="min-h-full p-4 md:p-8 grid place-items-start justify-center">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="현장 매입 등록"
+              className="w-full max-w-5xl bg-surface rounded-3xl shadow-2xl p-5 md:p-7 flex flex-col gap-5 relative"
+            >
+              <button
+                aria-label="닫기"
+                onClick={() => setPurchaseOpen(false)}
+                className="absolute top-4 right-4 md:top-5 md:right-5 w-10 h-10 rounded-xl bg-white border border-line hover:bg-slate-100 grid place-items-center text-body z-10"
+              >
+                <XIcon className="w-[18px] h-[18px]" />
+              </button>
+              <RegistrationForm
+                token={token}
+                reservationId={null}
+                initialPhone={null}
+                cancelLabel="닫기"
+                onCancel={() => setPurchaseOpen(false)}
+                onCreated={(id) => {
+                  setPurchaseOpen(false);
+                  setPurchaseTxId(id);
+                  setReloadCount((n) => n + 1);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {purchaseTxId && (
+        <DetailPanel
+          token={token}
+          id={purchaseTxId}
+          onClose={() => setPurchaseTxId(null)}
+          onChanged={() => setReloadCount((n) => n + 1)}
+        />
       )}
     </>
   );

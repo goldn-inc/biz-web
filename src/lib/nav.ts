@@ -18,8 +18,9 @@ export type NavItem = {
 /**
  * 임시 잠금(2026-07-15): 로그인·대시보드만 공개하고 나머지 화면은 내비에서 숨김 +
  * 직접 진입 시 "준비 중" 화면. 전체 공개로 되돌리려면 NAV_LOCKDOWN 을 false 로.
+ * 2026-07-23 전체 공개 전환.
  */
-export const NAV_LOCKDOWN = true;
+export const NAV_LOCKDOWN = false;
 
 const LOCKED_ROUTES = ["/reservations", "/transactions", "/coupons", "/catalog", "/wholesale"];
 
