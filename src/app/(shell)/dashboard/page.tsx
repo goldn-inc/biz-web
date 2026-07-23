@@ -237,7 +237,8 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-5 items-start">
+      {/* items-start 제거 — 같은 행의 카드(예약↔거래)가 같은 높이로 늘어나도록 */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-5">
         <section className="bg-white border border-line rounded-3xl shadow-sm p-5 md:p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold m-0">오늘의 예약</h2>
@@ -318,7 +319,7 @@ export default function DashboardPage() {
             <EmptyState icon={<PlusIcon className="w-6 h-6" />} title="오늘 거래가 없습니다" desc="현장 매입 등록으로 첫 거래를 시작하세요." />
           ) : (
             <div className="flex flex-col">
-              {activeTx.slice(0, 4).map((t) => (
+              {activeTx.slice(0, 7).map((t) => (
                 <div key={t.id} className="flex items-center gap-3 py-3 border-t border-slate-100">
                   <span className={`shrink-0 text-xs font-bold rounded-lg px-2 py-1 border ${TX_BADGE[t.status].cls}`}>
                     {TX_BADGE[t.status].label}
@@ -379,20 +380,9 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* 신상품은 스크롤 없이 보이도록 그리드 빈칸(오늘의 거래 아래)에 배치 */}
-        {wholesale && (
-          <ProductRail title="신상품" products={newest} emptyDesc="새로 등록된 상품이 없습니다." />
-        )}
+        {/* 신상품·잘 팔리는 제품 탭 카드 — 스크롤 없이 보이도록 그리드 빈칸(오늘의 거래 아래)에 배치 */}
+        {wholesale && <ProductTabsCard newest={newest} popular={popular} />}
       </div>
-
-      {wholesale && (
-        <ProductRail
-          title="잘 팔리는 제품"
-          products={popular}
-          showOrderCount
-          emptyDesc="발주 데이터가 쌓이면 인기 상품이 표시됩니다."
-        />
-      )}
 
       {/* 원페이지 매입 모달 — 접수 완료 시 이어서 감정·완료(DetailPanel)까지 대시보드에서 처리 */}
       {purchaseOpen && (
@@ -481,7 +471,7 @@ export default function DashboardPage() {
               role="dialog"
               aria-modal="true"
               aria-label="쿠폰 적용"
-              className="w-full max-w-2xl bg-surface rounded-3xl shadow-2xl p-6 md:p-9 flex flex-col gap-6 relative"
+              className="w-full max-w-3xl bg-surface rounded-3xl shadow-2xl p-6 md:p-9 flex flex-col gap-6 relative"
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-extrabold m-0">쿠폰 적용</h2>
@@ -502,25 +492,46 @@ export default function DashboardPage() {
   );
 }
 
-/** 홈 하단 상품 가로 레일 — 카드 클릭 시 도매 카탈로그로 이동. */
-function ProductRail({
-  title,
-  products,
-  showOrderCount,
-  emptyDesc,
+/** 신상품 · 잘 팔리는 제품 탭 카드 — 각 5개 가로 레일, 카드 클릭 시 도매 카탈로그로 이동. */
+function ProductTabsCard({
+  newest,
+  popular,
 }: {
-  title: string;
-  products: ApiProduct[] | null;
-  showOrderCount?: boolean;
-  emptyDesc: string;
+  newest: ApiProduct[] | null;
+  popular: ApiProduct[] | null;
 }) {
+  const [tab, setTab] = useState<"newest" | "popular">("newest");
+  const products = tab === "newest" ? newest : popular;
+  const showOrderCount = tab === "popular";
+  const emptyDesc =
+    tab === "newest"
+      ? "새로 등록된 상품이 없습니다."
+      : "발주 데이터가 쌓이면 인기 상품이 표시됩니다.";
+
   return (
     <section className="bg-white border border-line rounded-3xl shadow-sm p-5 md:p-6 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold m-0">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex bg-surface border border-line rounded-xl p-0.5 gap-0.5">
+          <button
+            onClick={() => setTab("newest")}
+            className={`h-9 px-3.5 rounded-[10px] text-sm transition ${
+              tab === "newest" ? "bg-white shadow-sm font-bold" : "text-caption font-semibold hover:text-body"
+            }`}
+          >
+            신상품
+          </button>
+          <button
+            onClick={() => setTab("popular")}
+            className={`h-9 px-3.5 rounded-[10px] text-sm transition ${
+              tab === "popular" ? "bg-white shadow-sm font-bold" : "text-caption font-semibold hover:text-body"
+            }`}
+          >
+            잘 팔리는 제품
+          </button>
+        </div>
         <Link
           href="/wholesale"
-          className="inline-flex items-center gap-1 text-primary text-sm font-semibold px-2 py-1.5 rounded-lg hover:bg-orange-50"
+          className="inline-flex items-center gap-1 text-primary text-sm font-semibold px-2 py-1.5 rounded-lg hover:bg-orange-50 shrink-0"
         >
           전체보기
           <ChevronRightIcon className="w-3.5 h-3.5" />
