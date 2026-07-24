@@ -1,9 +1,28 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import { saveBizSession, type BizAccount } from "@/lib/session";
+import { FloatingBackdrop } from "@/components/FloatingBackdrop";
+
+/** 온보딩 슈루룩 전환의 후반부 — 주황 오버레이가 걷히며 로그인 화면이 드러난다. */
+function ArrivalSweep() {
+  const params = useSearchParams();
+  const reduced = Boolean(useReducedMotion());
+  const [done, setDone] = useState(false);
+  if (params.get("from") !== "onboarding" || done || reduced) return null;
+  return (
+    <motion.div
+      className="pointer-events-none fixed inset-0 z-50 bg-primary"
+      initial={{ opacity: 1 }}
+      animate={{ opacity: 0 }}
+      transition={{ duration: 0.55, ease: "easeOut", delay: 0.05 }}
+      onAnimationComplete={() => setDone(true)}
+    />
+  );
+}
 
 type ErrorType = null | "mismatch" | "disabled";
 
@@ -13,13 +32,26 @@ type LoginResponse = {
 };
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+function LoginInner() {
   const router = useRouter();
+  const reduced = Boolean(useReducedMotion());
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errorType, setErrorType] = useState<ErrorType>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 로그인 성공 → 주황 원이 화면을 덮는 슈루룩 전환 후 목적지로
+  const [leavingTo, setLeavingTo] = useState<string | null>(null);
+  // 로그인 실패 시 폼 카드 shake
+  const shake = useAnimationControls();
 
   // 403(정지·계약종료·잠금)은 자물쇠 스타일로 서버 문구를 그대로 안내한다.
   // 입력은 제출 중에만 잠근다 — 403 후에도 다른 계정으로 재시도할 수 있어야 한다.
@@ -37,8 +69,21 @@ export default function LoginPage() {
         body: { loginId, password },
       });
       saveBizSession(result.accessToken, result.account);
-      router.replace(result.account.mustChangePassword ? "/change-password" : "/dashboard");
+      const target = result.account.mustChangePassword ? "/change-password" : "/dashboard";
+      if (reduced) {
+        router.replace(target);
+      } else {
+        // 도착 화면(셸)이 SweepReveal 로 오버레이를 걷어낸다
+        if (target === "/dashboard") sessionStorage.setItem("biz-sweep-arrive", "1");
+        setLeavingTo(target);
+      }
     } catch (error) {
+      if (!reduced) {
+        void shake.start({
+          x: [0, -10, 10, -7, 7, -4, 4, 0],
+          transition: { duration: 0.45, ease: "easeInOut" },
+        });
+      }
       if (error instanceof BizApiError && error.status === 403) {
         setErrorType("disabled");
         setErrorMessage(error.message);
@@ -54,21 +99,49 @@ export default function LoginPage() {
   };
 
   return (
-    <section className="min-h-screen grid place-items-center px-5 py-12">
-      <div className="w-full max-w-md flex flex-col gap-8">
+    <section
+      className="relative isolate min-h-screen grid place-items-center overflow-hidden px-5 py-12"
+      style={leavingTo ? { pointerEvents: "none" } : undefined}
+    >
+      <FloatingBackdrop />
+      <ArrivalSweep />
+      {/* 로그인 성공 — 카드가 오른쪽으로 샥 빠지고, 메인(셸)이 왼쪽에서 샥 들어온다 */}
+      <motion.div
+        className="w-full max-w-md flex flex-col gap-8"
+        animate={leavingTo ? { x: "70vw", opacity: 0 } : undefined}
+        transition={{ duration: 0.38, ease: [0.7, 0, 0.84, 0] }}
+        onAnimationComplete={() => {
+          if (leavingTo) router.replace(leavingTo);
+        }}
+      >
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-primary grid place-items-center text-white text-xl font-extrabold shadow-lg shadow-primary/25">
+          <motion.div
+            className="w-12 h-12 rounded-2xl bg-primary grid place-items-center text-white text-xl font-extrabold shadow-lg shadow-primary/25"
+            initial={reduced ? false : { opacity: 0, y: -24, scale: 0.6, rotate: -12 }}
+            animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+            transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+          >
             金
-          </div>
-          <div className="text-2xl font-extrabold tracking-tight">
-            금은마켓 <span className="text-primary">BIZ</span>
-          </div>
-          <p className="text-sm text-caption m-0">사업자 전용 매장 관리 서비스</p>
+          </motion.div>
+          <motion.div
+            initial={reduced ? false : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={reduced ? { duration: 0 } : { duration: 0.4, delay: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <div className="text-2xl font-extrabold tracking-tight">
+              금은마켓 <span className="text-primary">BIZ</span>
+            </div>
+            <p className="text-sm text-caption m-0 mt-1.5">사업자 전용 매장 관리 서비스</p>
+          </motion.div>
         </div>
 
-        <form
+        <motion.div animate={shake}>
+        <motion.form
           onSubmit={handleSubmit}
           className="bg-white border border-line rounded-3xl shadow-sm p-6 md:p-8 flex flex-col gap-5"
+          initial={reduced ? false : { opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={reduced ? { duration: 0 } : { duration: 0.45, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
         >
           {errorType === "mismatch" && (
             <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
@@ -178,11 +251,17 @@ export default function LoginPage() {
               </div>
             </div>
           )}
-        </form>
-        <p className="text-xs text-caption text-center m-0">
+        </motion.form>
+        </motion.div>
+        <motion.p
+          className="text-xs text-caption text-center m-0"
+          initial={reduced ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={reduced ? { duration: 0 } : { duration: 0.4, delay: 0.5 }}
+        >
           계정이 없다면 금은마켓 파트너 담당자를 통해 발급받을 수 있습니다.
-        </p>
-      </div>
+        </motion.p>
+      </motion.div>
     </section>
   );
 }

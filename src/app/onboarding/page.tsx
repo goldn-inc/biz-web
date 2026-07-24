@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion, useReducedMotion } from "motion/react";
+import { FloatingBackdrop } from "@/components/FloatingBackdrop";
 
 const AUTOPLAY_MS = 4500;
 
@@ -72,9 +74,20 @@ const N = SLIDES.length;
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const reduced = Boolean(useReducedMotion());
   const [index, setIndex] = useState(0);
+  // 로그인하기 클릭 → 주황 원이 화면을 덮는 슈루룩 전환 후 /login 으로
+  const [leaving, setLeaving] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const touchStartX = useRef<number | null>(null);
+
+  const goLogin = useCallback(() => {
+    if (reduced) {
+      router.push("/login");
+      return;
+    }
+    setLeaving(true);
+  }, [reduced, router]);
 
   const reset = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -111,10 +124,24 @@ export default function OnboardingPage() {
   return (
     <div
       id="onboarding"
-      className="min-h-screen flex flex-col select-none"
+      className="relative isolate min-h-screen flex flex-col select-none overflow-hidden"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
+      style={leaving ? { pointerEvents: "none" } : undefined}
     >
+      <FloatingBackdrop />
+
+      {/* 슈루룩 전환 — 주황 원이 아래에서 화면 전체를 덮은 뒤 /login 으로 */}
+      {leaving && (
+        <motion.div
+          className="fixed left-1/2 bottom-24 z-50 h-24 w-24 -translate-x-1/2 rounded-full bg-primary"
+          initial={{ scale: 0 }}
+          animate={{ scale: 40 }}
+          transition={{ duration: 0.5, ease: [0.7, 0, 0.84, 0] }}
+          onAnimationComplete={() => router.push("/login?from=onboarding")}
+        />
+      )}
+
       <header className="flex items-center justify-between px-5 py-4 md:px-9 md:py-6">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-primary grid place-items-center text-white text-sm font-extrabold">
@@ -152,7 +179,7 @@ export default function OnboardingPage() {
             {k === N - 1 && (
               <div className="anim-up d4 flex flex-col items-center gap-3.5 mt-1">
                 <button
-                  onClick={() => router.push("/login")}
+                  onClick={goLogin}
                   className="h-14 px-12 rounded-2xl bg-primary hover:bg-primary-light active:scale-[.98] text-white text-base font-bold shadow-lg shadow-primary/30 transition"
                 >
                   로그인하기

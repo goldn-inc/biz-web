@@ -253,17 +253,17 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function EmptyState({ onRegister }: { onRegister: () => void }) {
   return (
-    <div className="max-w-md bg-white border border-line rounded-3xl shadow-sm p-8 flex flex-col items-center gap-3 text-center">
-      <div className="w-12 h-12 rounded-2xl bg-slate-100 grid place-items-center text-slate-400">
-        <ScaleIcon className="w-6 h-6" />
+    <div className="w-full bg-white border border-line rounded-3xl shadow-sm p-12 min-h-[55vh] flex flex-col items-center justify-center gap-4 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-slate-100 grid place-items-center text-slate-400">
+        <ScaleIcon className="w-8 h-8" />
       </div>
-      <div className="text-sm font-bold">조건에 맞는 거래가 없습니다</div>
-      <p className="text-xs text-caption leading-relaxed m-0">
+      <div className="text-lg font-extrabold">조건에 맞는 거래가 없습니다</div>
+      <p className="text-sm text-caption leading-relaxed m-0">
         현장 방문 고객의 매입·감정을 등록해보세요.
       </p>
       <button
         onClick={onRegister}
-        className="h-12 px-5 rounded-2xl bg-primary hover:bg-primary-light text-white text-sm font-bold shadow-lg shadow-primary/20 inline-flex items-center gap-2 transition"
+        className="mt-2 h-12 px-6 rounded-2xl bg-primary hover:bg-primary-light text-white text-sm font-bold shadow-lg shadow-primary/20 inline-flex items-center gap-2 transition"
       >
         <PlusIcon className="w-4 h-4" />
         현장 매입 등록
