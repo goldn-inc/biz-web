@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { Badge, FilterChip, ListRow } from "@/components/ui";
 import { AlertCircleIcon, BellIcon, CalendarIcon } from "@/components/icons";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
@@ -294,25 +295,31 @@ export default function ReservationsPage() {
         </>
       )}
 
-      {selected && (
-        <DetailPanel
-          reservation={selected}
-          onClose={() => setSelectedId(null)}
-          onConfirm={() => void handleConfirm(selected)}
-          onComplete={() => void handleComplete(selected)}
-          onNoShow={() => setDialog({ action: "NO_SHOW", target: selected })}
-          onCancel={() => setDialog({ action: "CANCELLED", target: selected })}
-        />
-      )}
+      <AnimatePresence>
+        {selected && (
+          <DetailPanel
+            key="resv-detail"
+            reservation={selected}
+            onClose={() => setSelectedId(null)}
+            onConfirm={() => void handleConfirm(selected)}
+            onComplete={() => void handleComplete(selected)}
+            onNoShow={() => setDialog({ action: "NO_SHOW", target: selected })}
+            onCancel={() => setDialog({ action: "CANCELLED", target: selected })}
+          />
+        )}
+      </AnimatePresence>
 
-      {dialog && (
-        <ConfirmDialog
-          action={dialog.action}
-          target={dialog.target}
-          onClose={() => setDialog(null)}
-          onConfirm={() => void confirmDialog()}
-        />
-      )}
+      <AnimatePresence>
+        {dialog && (
+          <ConfirmDialog
+            key="resv-confirm"
+            action={dialog.action}
+            target={dialog.target}
+            onClose={() => setDialog(null)}
+            onConfirm={() => void confirmDialog()}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { PlusIcon, AlertCircleIcon, ScaleIcon } from "@/components/icons";
+import { AnimatePresence } from "motion/react";
 import { Badge, ListRow, FilterChip } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
@@ -211,14 +212,17 @@ function TransactionsPageInner() {
         </div>
       )}
 
-      {selectedId && (
-        <DetailPanel
-          token={token}
-          id={selectedId}
-          onClose={() => setSelectedId(null)}
-          onChanged={refreshList}
-        />
-      )}
+      <AnimatePresence>
+        {selectedId && (
+          <DetailPanel
+            key="tx-detail"
+            token={token}
+            id={selectedId}
+            onClose={() => setSelectedId(null)}
+            onChanged={refreshList}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

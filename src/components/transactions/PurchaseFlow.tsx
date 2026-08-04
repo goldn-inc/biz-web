@@ -19,7 +19,8 @@ import {
   PhoneIcon,
   MinusIcon,
 } from "@/components/icons";
-import { Badge, Card, Input } from "@/components/ui";
+import { AnimatePresence } from "motion/react";
+import { Badge, Card, Dialog, Input, SidePanel } from "@/components/ui";
 import type { BadgeTone } from "@/components/ui";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import {
@@ -213,14 +214,12 @@ export function DetailPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-slate-900/45" onClick={onClose} aria-hidden />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="거래 상세"
-        className="relative w-full lg:w-[520px] lg:h-full mt-auto lg:mt-0 bg-white lg:border-l border-line rounded-t-3xl lg:rounded-none shadow-2xl overflow-y-auto max-h-[88%] lg:max-h-full flex flex-col"
-      >
+    <>
+    <SidePanel
+      onClose={onClose}
+      label="거래 상세"
+      className="relative w-full lg:w-[520px] lg:h-full mt-auto lg:mt-0 bg-white lg:border-l border-line rounded-t-3xl lg:rounded-none shadow-2xl overflow-y-auto max-h-[88%] lg:max-h-full flex flex-col"
+    >
         <div className="flex items-center justify-between px-6 py-5 border-b border-line">
           <div>
             <div className="text-xs font-semibold text-caption uppercase">{id.slice(0, 8)}</div>
@@ -394,15 +393,17 @@ export function DetailPanel({
             </>
           )}
         </div>
-      </div>
+    </SidePanel>
 
+    {/* 패널 바깥에 둔다 — 패널은 transform 이 걸리고 overflow-y-auto 라,
+        안에 두면 position:fixed 확인창이 뷰포트가 아닌 패널 기준으로 잡히고 잘린다. */}
+      <AnimatePresence>
       {confirmCancel && detail && (
-        <div className="fixed inset-0 z-50 grid place-items-center p-5 bg-slate-900/45">
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-7 flex flex-col gap-4"
-          >
+        <Dialog
+          key="cancel-confirm"
+          role="alertdialog"
+          className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-7 flex flex-col gap-4"
+        >
             <div className="w-12 h-12 rounded-2xl grid place-items-center border bg-red-50 border-red-200 text-red-600">
               <AlertTriangleIcon className="w-[22px] h-[22px]" />
             </div>
@@ -428,10 +429,10 @@ export function DetailPanel({
                 거래 취소
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
-    </div>
+      </AnimatePresence>
+    </>
   );
 }
 

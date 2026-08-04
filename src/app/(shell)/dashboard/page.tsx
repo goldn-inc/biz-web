@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence } from "motion/react";
 import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon, XIcon } from "@/components/icons";
-import { Badge } from "@/components/ui";
+import { Badge, ScrollDialog } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch } from "@/lib/api";
 import { isWholesaleTier, tierLabel } from "@/lib/session";
@@ -385,15 +386,13 @@ export default function DashboardPage() {
       </div>
 
       {/* 원페이지 매입 모달 — 접수 완료 시 이어서 감정·완료(DetailPanel)까지 대시보드에서 처리 */}
+      <AnimatePresence>
       {purchaseOpen && (
-        <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-900/45">
-          <div className="min-h-full p-4 md:p-8 grid place-items-start justify-center">
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="현장 매입 등록"
-              className="w-full max-w-5xl bg-surface rounded-3xl shadow-2xl p-5 md:p-7 flex flex-col gap-5 relative"
-            >
+        <ScrollDialog
+          key="purchase"
+          label="현장 매입 등록"
+          className="w-full max-w-5xl bg-surface rounded-3xl shadow-2xl p-5 md:p-7 flex flex-col gap-5 relative"
+        >
               {/* 닫기는 RegistrationForm 헤더의 cancelLabel("닫기") 버튼 하나만 사용 — X 중복 제거 */}
               <RegistrationForm
                 token={token}
@@ -407,23 +406,27 @@ export default function DashboardPage() {
                   setReloadCount((n) => n + 1);
                 }}
               />
-            </div>
-          </div>
-        </div>
+        </ScrollDialog>
       )}
+      </AnimatePresence>
 
+      <AnimatePresence>
       {purchaseTxId && (
         <DetailPanel
+          key="purchase-tx"
           token={token}
           id={purchaseTxId}
           onClose={() => setPurchaseTxId(null)}
           onChanged={() => setReloadCount((n) => n + 1)}
         />
       )}
+      </AnimatePresence>
 
       {/* 예약 바로 처리 — 오늘 예약 행 클릭 시 */}
+      <AnimatePresence>
       {resvSelected && (
         <ReservationDetailPanel
+          key="resv-detail"
           reservation={resvSelected}
           onClose={() => {
             setResvSelectedId(null);
@@ -443,45 +446,46 @@ export default function DashboardPage() {
           onCancel={() => setResvDialog({ action: "CANCELLED", target: resvSelected })}
         />
       )}
+      </AnimatePresence>
       {resvError && resvSelected && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium shadow-lg">
           {resvError}
         </div>
       )}
+      <AnimatePresence>
       {resvDialog && (
         <ReservationConfirmDialog
+          key="resv-confirm"
           action={resvDialog.action}
           target={resvDialog.target}
           onClose={() => setResvDialog(null)}
           onConfirm={() => void confirmResvDialog()}
         />
       )}
+      </AnimatePresence>
 
       {/* 쿠폰 적용 모달 — 조회·검증·거래 적용 */}
+      <AnimatePresence>
       {couponOpen && (
-        <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-900/45">
-          <div className="min-h-full p-4 md:p-8 grid place-items-start justify-center">
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="쿠폰 적용"
-              className="w-full max-w-3xl bg-surface rounded-3xl shadow-2xl p-6 md:p-9 flex flex-col gap-6 relative"
+        <ScrollDialog
+          key="coupon"
+          label="쿠폰 적용"
+          className="w-full max-w-3xl bg-surface rounded-3xl shadow-2xl p-6 md:p-9 flex flex-col gap-6 relative"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-extrabold m-0">쿠폰 적용</h2>
+            <button
+              aria-label="닫기"
+              onClick={() => setCouponOpen(false)}
+              className="w-10 h-10 rounded-xl bg-white border border-line hover:bg-slate-100 grid place-items-center text-body"
             >
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-extrabold m-0">쿠폰 적용</h2>
-                <button
-                  aria-label="닫기"
-                  onClick={() => setCouponOpen(false)}
-                  className="w-10 h-10 rounded-xl bg-white border border-line hover:bg-slate-100 grid place-items-center text-body"
-                >
-                  <XIcon className="w-[18px] h-[18px]" />
-                </button>
-              </div>
-              <CouponApplyWidget token={token} onApplied={() => setReloadCount((n) => n + 1)} />
-            </div>
+              <XIcon className="w-[18px] h-[18px]" />
+            </button>
           </div>
-        </div>
+          <CouponApplyWidget token={token} onApplied={() => setReloadCount((n) => n + 1)} />
+        </ScrollDialog>
       )}
+      </AnimatePresence>
     </>
   );
 }
