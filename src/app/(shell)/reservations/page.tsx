@@ -264,8 +264,13 @@ export default function ReservationsPage() {
                 </span>
               </div>
               <div className="bg-white border-2 border-orange-100 rounded-3xl shadow-sm shadow-primary/5 overflow-hidden">
-                {priority.map((r) => (
-                  <ReservationRow key={r.id} reservation={r} onOpen={() => setSelectedId(r.id)} />
+                {priority.map((r, i) => (
+                  <ReservationRow
+                    key={r.id}
+                    index={i}
+                    reservation={r}
+                    onOpen={() => setSelectedId(r.id)}
+                  />
                 ))}
               </div>
             </div>
@@ -275,8 +280,13 @@ export default function ReservationsPage() {
             <div className="flex flex-col gap-2.5">
               <h2 className="text-sm font-extrabold text-body m-0">전체 예약</h2>
               <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden">
-                {rest.map((r) => (
-                  <ReservationRow key={r.id} reservation={r} onOpen={() => setSelectedId(r.id)} />
+                {rest.map((r, i) => (
+                  <ReservationRow
+                    key={r.id}
+                    index={i}
+                    reservation={r}
+                    onOpen={() => setSelectedId(r.id)}
+                  />
                 ))}
               </div>
             </div>
@@ -310,13 +320,15 @@ export default function ReservationsPage() {
 function ReservationRow({
   reservation,
   onOpen,
+  index,
 }: {
   reservation: Reservation;
   onOpen: () => void;
+  index: number;
 }) {
   const meta = STATUS_META[reservation.status];
   return (
-    <ListRow>
+    <ListRow index={index}>
       <div className="w-20 shrink-0">
         <div className="text-sm font-extrabold">{reservation.time}</div>
         <div className="text-xs text-caption">{reservation.dateLabel}</div>

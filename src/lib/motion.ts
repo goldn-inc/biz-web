@@ -55,66 +55,41 @@ export function staggerDelay(index: number, gap: number = STAGGER.base): number 
   return Math.min(index, STAGGER.maxIndex) * gap;
 }
 
-export type MotionIntensity = "subtle" | "signature" | "expressive";
-
-export type IntensityPreset = {
-  label: string;
-  /** 이 결이 어떤 화면에 맞는지 — PoC 화면에서 그대로 보여준다 */
-  summary: string;
-  container: Variants;
-  item: Variants;
-  hover: TargetAndTransition;
-  tap: TargetAndTransition;
-};
+/**
+ * 진입 — 목록·그리드가 순차로 떠오르는 결.
+ *
+ * 값은 `.page-stagger`(섹션 촤라락)와 같다. 섹션이 이 리듬으로 뜨고 그 안의 행이
+ * 같은 리듬으로 이어져야 화면이 하나로 읽힌다. 부모에 `container`, 각 항목에 `item` 을 준다.
+ *
+ * 주의 — 항목이 많은 목록은 `staggerChildren` 만으로는 마지막 행이 한참 뒤에 뜬다.
+ * 그런 곳은 `custom` + `staggerDelay()` 로 지연 상한을 걸어야 한다.
+ */
+export const ENTER = {
+  container: {
+    hidden: {},
+    shown: { transition: { staggerChildren: STAGGER.base } },
+  },
+  item: {
+    hidden: { opacity: 0, y: 14 },
+    shown: { opacity: 1, y: 0, transition: { duration: DUR.section, ease: EASE.out } },
+  },
+} satisfies Record<"container" | "item", Variants>;
 
 /**
- * 강도 프리셋 3종. 같은 화면에 번갈아 적용해 결을 고르기 위한 것이고,
- * 확정되면 하나만 남기고 나머지는 지운다.
+ * 진입(지연 상한판) — 행 수를 예측할 수 없는 목록용.
+ * `custom={index}` 를 함께 넘긴다. `STAGGER.maxIndex` 를 넘는 행은 지연이 더 늘지 않는다.
  */
-export const INTENSITY: Record<MotionIntensity, IntensityPreset> = {
-  subtle: {
-    label: "절제",
-    summary:
-      "정보 밀도가 높은 업무 화면 기준. 이동 6px·투명도 위주라 눈이 덜 피로하고, 하루 종일 보는 화면에 맞다. 대신 '움직인다'는 인상은 약하다.",
-    container: {
-      hidden: {},
-      shown: { transition: { staggerChildren: STAGGER.tight } },
-    },
-    item: {
-      hidden: { opacity: 0, y: 6 },
-      shown: { opacity: 1, y: 0, transition: { duration: 0.18, ease: EASE.out } },
-    },
-    hover: { y: -1, transition: { duration: DUR.feedback, ease: EASE.out } },
-    tap: { scale: 0.99, transition: { duration: DUR.feedback } },
-  },
-  signature: {
-    label: "현재 결 확장",
-    summary:
-      "지금 biz-web 이 이미 쓰는 값(이동 14px·0.5s·expo out)을 카드·목록 행·버튼까지 넓힌 것. 커튼 전환과 본문 촤라락이 같은 리듬으로 이어져 화면이 하나로 읽힌다.",
-    container: {
-      hidden: {},
-      shown: { transition: { staggerChildren: STAGGER.base } },
-    },
-    item: {
-      hidden: { opacity: 0, y: 14 },
-      shown: { opacity: 1, y: 0, transition: { duration: DUR.section, ease: EASE.out } },
-    },
-    hover: { y: -2, transition: { duration: DUR.feedback, ease: EASE.out } },
-    tap: { scale: 0.97, transition: { duration: DUR.feedback } },
-  },
-  expressive: {
-    label: "과감",
-    summary:
-      "스프링으로 튕기며 자리를 잡고 크기까지 함께 변한다. 손맛이 가장 강하지만, 표가 빽빽한 화면에서는 산만해질 수 있다.",
-    container: {
-      hidden: {},
-      shown: { transition: { staggerChildren: STAGGER.loose } },
-    },
-    item: {
-      hidden: { opacity: 0, y: 24, scale: 0.96 },
-      shown: { opacity: 1, y: 0, scale: 1, transition: SPRING.bouncy },
-    },
-    hover: { y: -4, scale: 1.01, transition: SPRING.settle },
-    tap: { scale: 0.94, transition: { duration: DUR.feedback } },
-  },
-};
+export const ENTER_CAPPED = {
+  hidden: { opacity: 0, y: 14 },
+  shown: (index: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: DUR.section, ease: EASE.out, delay: staggerDelay(index) },
+  }),
+} satisfies Variants;
+
+/** 호버·눌림 피드백. 색 전환은 CSS 가 맡고 여기서는 위치·크기만 건드린다. */
+export const FEEDBACK = {
+  hover: { y: -2, transition: { duration: DUR.feedback, ease: EASE.out } },
+  tap: { scale: 0.97, transition: { duration: DUR.feedback } },
+} satisfies Record<"hover" | "tap", TargetAndTransition>;

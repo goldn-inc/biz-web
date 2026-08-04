@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, type HTMLMotionProps } from "motion/react";
-import { INTENSITY } from "@/lib/motion";
+import { FEEDBACK } from "@/lib/motion";
 
 type ButtonVariant = "primary" | "secondary";
 
@@ -15,8 +15,6 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   secondary:
     "bg-white border border-line hover:border-primary-light hover:text-primary text-body disabled:text-slate-300 disabled:hover:border-line disabled:hover:text-slate-300",
 };
-
-const FEEDBACK = INTENSITY.signature;
 
 /**
  * 색 전환은 CSS `transition` 이 그대로 맡고, 위치·크기 피드백만 motion 이 맡는다.

@@ -182,8 +182,8 @@ function TransactionsPageInner() {
         <EmptyState onRegister={() => setView("form")} />
       ) : (
         <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden">
-          {visible.map((t) => (
-            <ListRow key={t.id} className="first:border-t-0">
+          {visible.map((t, i) => (
+            <ListRow key={t.id} index={i} className="first:border-t-0">
               <div className="w-20 shrink-0">
                 <div className="text-sm font-extrabold">{timeLabelOf(t.createdAt)}</div>
                 <div className="text-xs text-caption uppercase">{t.id.slice(0, 8)}</div>
