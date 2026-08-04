@@ -212,8 +212,16 @@ button {
   }
 }
 
-.page-stagger > * {
-  animation: page-rise var(--dur-section) var(--ease-out) both;
+/* fill-mode 는 `both` 가 아니라 **`backwards`** 다. 필요한 건 지연 구간 동안 시작
+   상태를 붙잡아 두는 것뿐인데, `both`(=backwards+forwards)를 쓰면 애니메이션이 끝난
+   뒤에도 `transform: matrix(1,0,0,1,0,0)` 가 계속 남는다. `none` 이 아닌 transform 은
+   항등행렬이어도 그것만으로 containing block 을 만들어서, 이 안에서 열리는 오버레이의
+   `position: fixed` 가 뷰포트 대신 이 요소를 기준으로 잡힌다(admin-web 에서 실측).
+
+   `:not(.fixed)` — 오버레이는 열릴 때 새 형제로 추가되므로 애니메이션이 그 시점에
+   다시 돈다. 도는 동안 transform 이 걸리므로 대상에서 뺀다. */
+.page-stagger > *:not(.fixed) {
+  animation: page-rise var(--dur-section) var(--ease-out) backwards;
 }
 
 /* 6번째부터는 지연을 더 늘리지 않는다 — 섹션이 많은 화면에서 마지막이 늦게 뜨는 걸 막는 상한.
