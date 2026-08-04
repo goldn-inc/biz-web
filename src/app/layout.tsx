@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
+import { MotionProvider } from "@/components/MotionProvider";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
@@ -25,7 +26,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" className={cn("font-sans", geist.variable)}>
-      <body className="font-sans antialiased bg-surface text-ink">{children}</body>
+      <body className="font-sans antialiased bg-surface text-ink">
+        <MotionProvider>{children}</MotionProvider>
+      </body>
     </html>
   );
 }

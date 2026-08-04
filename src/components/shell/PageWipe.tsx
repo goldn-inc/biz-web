@@ -9,6 +9,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { DUR, EASE as TOKEN_EASE } from "@/lib/motion";
 
 /**
  * 페이지 와이프 — 랜딩페이지식 풀스크린 주황 커튼 전환.
@@ -40,8 +41,15 @@ function metaFor(href: string) {
   return ROUTE_META.find((r) => href.startsWith(r.prefix)) ?? { dir: "left" as WipeDir, label: "" };
 }
 
-/** 프리미엄 이징 — 하이엔드 전환에서 쓰는 expo 계열 in-out. */
-const EASE: [number, number, number, number] = [0.83, 0, 0.17, 1];
+/** 커튼 이징 — expo 계열 in-out. 값은 모션 토큰(`EASE.inOut`)이 원본이다. */
+const CURTAIN_EASE = TOKEN_EASE.inOut;
+
+/** 커튼 덮기/걷기 지속시간. 걷을 때가 살짝 길어야 밑이 드러나는 게 자연스럽다. */
+const COVER_SEC = 0.3;
+const REVEAL_SEC = DUR.curtain;
+
+/** 레이어 스태거 — 웜블랙과 주황이 어긋나 움직여야 샌드위치로 읽힌다. */
+const LAYER_LAG_SEC = 0.07;
 
 /** 방향별 [오프스크린(진입 전), 정지, 반대편 관통] 트랜스폼. 이동 중 스큐 → 정지 시 펴짐. */
 const T = {
@@ -141,9 +149,9 @@ export function PageWipeProvider({ children }: { children: React.ReactNode }) {
               initial={t.hidden}
               animate={revealing ? t.exited : t.shown}
               transition={{
-                duration: revealing ? 0.42 : 0.3,
-                delay: revealing ? 0.08 : 0,
-                ease: EASE,
+                duration: revealing ? REVEAL_SEC : COVER_SEC,
+                delay: revealing ? LAYER_LAG_SEC + 0.01 : 0,
+                ease: CURTAIN_EASE,
               }}
               onAnimationComplete={() => {
                 if (revealing) setWipe(null);
@@ -159,9 +167,9 @@ export function PageWipeProvider({ children }: { children: React.ReactNode }) {
               initial={t.hidden}
               animate={revealing ? t.exited : t.shown}
               transition={{
-                duration: revealing ? 0.4 : 0.3,
-                delay: revealing ? 0 : 0.07,
-                ease: EASE,
+                duration: revealing ? REVEAL_SEC - 0.02 : COVER_SEC,
+                delay: revealing ? 0 : LAYER_LAG_SEC,
+                ease: CURTAIN_EASE,
               }}
               onAnimationComplete={() => {
                 if (covering && wipe) {
@@ -182,7 +190,7 @@ export function PageWipeProvider({ children }: { children: React.ReactNode }) {
                   className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm grid place-items-center text-white text-xl font-extrabold"
                   initial={{ y: 18, opacity: 0, scale: 0.8 }}
                   animate={revealing ? { opacity: 0 } : { y: 0, opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.38, delay: revealing ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.38, delay: revealing ? 0 : 0.18, ease: TOKEN_EASE.out }}
                 >
                   金
                 </motion.div>
@@ -190,7 +198,7 @@ export function PageWipeProvider({ children }: { children: React.ReactNode }) {
                   className="text-white text-3xl md:text-4xl font-extrabold tracking-tight"
                   initial={{ y: 26, opacity: 0 }}
                   animate={revealing ? { opacity: 0 } : { y: 0, opacity: 1 }}
-                  transition={{ duration: 0.4, delay: revealing ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.4, delay: revealing ? 0 : 0.22, ease: TOKEN_EASE.out }}
                 >
                   {wipe.label}
                 </motion.div>
@@ -198,7 +206,7 @@ export function PageWipeProvider({ children }: { children: React.ReactNode }) {
                   className="text-white/60 text-[11px] font-bold tracking-[0.35em] uppercase"
                   initial={{ y: 14, opacity: 0 }}
                   animate={revealing ? { opacity: 0 } : { y: 0, opacity: 1 }}
-                  transition={{ duration: 0.4, delay: revealing ? 0 : 0.28, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.4, delay: revealing ? 0 : 0.28, ease: TOKEN_EASE.out }}
                 >
                   GOLDSILVER BIZ
                 </motion.div>
