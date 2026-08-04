@@ -63,57 +63,9 @@ button {
   font-family: inherit;
 }
 
-/* ─── 온보딩 슬라이드 애니메이션 (bizweb-onboarding.html 원본 keyframe) ─── */
-@keyframes ob-up {
-  from {
-    opacity: 0;
-    transform: translateY(22px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes ob-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.55);
-  }
-  55% {
-    opacity: 1;
-    transform: scale(1.07);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.slide {
-  display: none;
-}
-.slide.active {
-  display: flex;
-}
-.slide.active .anim-pop {
-  animation: ob-pop 0.55s var(--ease-overshoot) backwards;
-}
-.slide.active .anim-up {
-  animation: ob-up var(--dur-section) var(--ease-out) backwards;
-}
-.d1 {
-  animation-delay: 0.05s;
-}
-.d2 {
-  animation-delay: 0.12s;
-}
-.d3 {
-  animation-delay: 0.2s;
-}
-.d4 {
-  animation-delay: 0.28s;
-}
+/* 온보딩 슬라이드 keyframe(ob-up·ob-pop·.slide·.anim-*·.d1~d4)은 제거했다 —
+   슬라이드를 display 토글에서 가로 드래그 트랙으로 바꾸면서 motion 변이로 옮겼다.
+   값은 그대로 EASE.overshoot / EASE.out + DUR.section 을 쓴다. */
 
 /* 가로 상품 레일 스크롤바 숨김 — 좌우 화살표 버튼으로 탐색 */
 .no-scrollbar {
