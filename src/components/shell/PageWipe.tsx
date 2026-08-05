@@ -34,6 +34,7 @@ const ROUTE_META: { prefix: string; dir: WipeDir; label: string }[] = [
   { prefix: "/coupons", dir: "bottom", label: "쿠폰" },
   { prefix: "/catalog", dir: "left", label: "카탈로그 신청" },
   { prefix: "/wholesale", dir: "center", label: "도매 주문" },
+  { prefix: "/store-info", dir: "bottom", label: "매장 정보" },
   { prefix: "/more", dir: "right", label: "더보기" },
 ];
 

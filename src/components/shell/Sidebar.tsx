@@ -79,13 +79,23 @@ export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
       <div className="flex-1" />
 
       <div className="border-t border-line pt-4 px-2.5 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-slate-100 border border-line grid place-items-center text-sm font-bold text-body shrink-0">
-          {storeName.slice(0, 1)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold truncate">{storeName}</div>
-          <div className="text-xs font-semibold text-caption">{tierLabel(tier)}</div>
-        </div>
+        {/* 사이드바에는 「더보기」가 없어 매장 정보 진입점이 이 카드다(탭바 쪽은 /more 목록). */}
+        <Link
+          href="/store-info"
+          onClick={(e) => {
+            e.preventDefault();
+            navigate("/store-info");
+          }}
+          className="flex items-center gap-3 min-w-0 flex-1 rounded-xl px-1 py-1 -mx-1 hover:bg-slate-100 transition-colors"
+        >
+          <div className="w-9 h-9 rounded-full bg-slate-100 border border-line grid place-items-center text-sm font-bold text-body shrink-0">
+            {storeName.slice(0, 1)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold truncate">{storeName}</div>
+            <div className="text-xs font-semibold text-caption">{tierLabel(tier)}</div>
+          </div>
+        </Link>
         <button
           type="button"
           onClick={onLogout}

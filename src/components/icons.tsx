@@ -23,6 +23,16 @@ export function HomeIcon(props: IconProps) {
   );
 }
 
+export function StoreIcon(props: IconProps) {
+  return (
+    <svg {...base(props, 1.8)}>
+      <path d="M4 4h16l1 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z" />
+      <path d="M5 13v7h14v-7" />
+      <path d="M10 20v-4h4v4" />
+    </svg>
+  );
+}
+
 export function CalendarIcon(props: IconProps) {
   return (
     <svg {...base(props, 1.8)}>

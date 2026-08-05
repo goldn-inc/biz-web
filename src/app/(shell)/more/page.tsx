@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CatalogIcon, ChevronRightIcon, WholesaleIcon } from "@/components/icons";
+import { CatalogIcon, ChevronRightIcon, StoreIcon, WholesaleIcon } from "@/components/icons";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { isWholesaleTier } from "@/lib/session";
 
@@ -31,6 +31,14 @@ export default function MorePage() {
             <ChevronRightIcon className="w-4 h-4 text-caption" />
           </Link>
         )}
+        <Link
+          href="/store-info"
+          className="flex items-center gap-3.5 px-4 md:px-5 py-3.5 border-t border-slate-100 hover:bg-slate-50"
+        >
+          <StoreIcon className="w-5 h-5 text-body" />
+          <div className="flex-1 text-sm font-semibold">매장 정보</div>
+          <ChevronRightIcon className="w-4 h-4 text-caption" />
+        </Link>
       </div>
       <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden">
         <button
