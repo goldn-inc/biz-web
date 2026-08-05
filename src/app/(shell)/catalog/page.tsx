@@ -25,6 +25,8 @@ type ApiCatalogItem = {
   priceMinKrw: number | null;
   priceMaxKrw: number | null;
   note: string | null;
+  goldWeightG: number | null;
+  goldPurity: string | null;
   imageKeys: string[];
   imageUrls: string[];
   status: ApplicationStatus;
@@ -53,6 +55,8 @@ type FormState = {
   description: string;
   priceMin: string;
   priceMax: string;
+  goldWeight: string;
+  goldPurity: string;
   note: string;
 };
 
@@ -62,6 +66,8 @@ const EMPTY_FORM: FormState = {
   description: "",
   priceMin: "",
   priceMax: "",
+  goldWeight: "",
+  goldPurity: "",
   note: "",
 };
 
@@ -71,6 +77,13 @@ type View = "list" | "form" | "done";
 function parseKrw(raw: string): number | undefined {
   const n = Number(raw.replace(/[^0-9]/g, ""));
   return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** "3.75" → 3.75. 소수 둘째 자리까지만 보낸다(서버 numeric(10,2)). */
+function parseGram(raw: string): number | undefined {
+  const n = Number(raw.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return Math.round(n * 100) / 100;
 }
 
 function appliedLabel(iso: string): string {
@@ -137,6 +150,8 @@ export default function CatalogPage() {
       description: app.description,
       priceMin: app.priceMinKrw !== null ? String(app.priceMinKrw) : "",
       priceMax: app.priceMaxKrw !== null ? String(app.priceMaxKrw) : "",
+      goldWeight: app.goldWeightG !== null ? String(app.goldWeightG) : "",
+      goldPurity: app.goldPurity ?? "",
       note: "",
     });
     // 반려 건의 기존 이미지 키는 자기 매장 소유라 재사용 가능.
@@ -159,6 +174,8 @@ export default function CatalogPage() {
           description: form.description.trim(),
           priceMinKrw: parseKrw(form.priceMin),
           priceMaxKrw: parseKrw(form.priceMax),
+          goldWeightG: parseGram(form.goldWeight),
+          goldPurity: form.goldPurity.trim() || undefined,
           note: form.note.trim() || undefined,
           imageKeys: images.map((img) => img.key),
         },
@@ -491,6 +508,29 @@ function ApplicationForm({
               />
               <span className="text-sm text-caption shrink-0">원</span>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-body">
+              제작에 드는 금 <span className="text-caption font-medium">(선택)</span>
+            </label>
+            <div className="flex items-center gap-2.5">
+              <Input
+                value={form.goldWeight}
+                onChange={(e) => setForm((f) => ({ ...f, goldWeight: e.target.value }))}
+                inputMode="decimal"
+                placeholder="3.75"
+                className="flex-1 min-w-0 text-right tabular-nums"
+              />
+              <span className="text-sm text-caption shrink-0">g</span>
+              <Input
+                value={form.goldPurity}
+                onChange={(e) => setForm((f) => ({ ...f, goldPurity: e.target.value }))}
+                placeholder="14K"
+                className="flex-1 min-w-0"
+              />
+            </div>
+            <p className="text-xs text-caption">본사 심사에서 참고합니다. 소비자에게는 보이지 않습니다.</p>
           </div>
 
           <div className="flex flex-col gap-2">
