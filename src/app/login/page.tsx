@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { bizApiFetch, BizApiError } from "@/lib/api";
@@ -57,6 +57,35 @@ function LoginInner() {
   // 입력은 제출 중에만 잠근다 — 403 후에도 다른 계정으로 재시도할 수 있어야 한다.
   const disabled = submitting;
 
+  // 전환 애니메이션이 끝났을 때와 안전망 타이머, 두 곳에서 부르므로 한 번만 이동하게 잠근다.
+  const navigatedRef = useRef(false);
+
+  /**
+   * 로그인 성공 후 목적지로 이동한다. 여러 번 불려도 첫 호출만 유효하다.
+   * @param target 이동할 경로
+   */
+  const navigateOnce = useCallback(
+    (target: string) => {
+      if (navigatedRef.current) return;
+      navigatedRef.current = true;
+      router.replace(target);
+    },
+    [router],
+  );
+
+  /**
+   * 이동을 애니메이션 완료 콜백에만 맡기지 않기 위한 안전망.
+   *
+   * 세션은 이미 저장된 뒤라, `onAnimationComplete` 가 오지 않으면 **로그인에 성공하고도
+   * 로그인 화면에 머문다.** 그 사이 카드에는 pointerEvents:none 이 걸려 있어 다시 눌러볼 수도
+   * 없다. 애니메이션은 0.38s 라 그보다 넉넉히 잡아두고, 콜백이 제때 오면 이 타이머는 무의미해진다.
+   */
+  useEffect(() => {
+    if (!leavingTo) return;
+    const timer = setTimeout(() => navigateOnce(leavingTo), 900);
+    return () => clearTimeout(timer);
+  }, [leavingTo, navigateOnce]);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -71,7 +100,7 @@ function LoginInner() {
       saveBizSession(result.accessToken, result.account);
       const target = result.account.mustChangePassword ? "/change-password" : "/dashboard";
       if (reduced) {
-        router.replace(target);
+        navigateOnce(target);
       } else {
         // 도착 화면(셸)이 SweepReveal 로 오버레이를 걷어낸다
         if (target === "/dashboard") sessionStorage.setItem("biz-sweep-arrive", "1");
@@ -111,7 +140,7 @@ function LoginInner() {
         animate={leavingTo ? { x: "70vw", opacity: 0 } : undefined}
         transition={{ duration: 0.38, ease: [0.7, 0, 0.84, 0] }}
         onAnimationComplete={() => {
-          if (leavingTo) router.replace(leavingTo);
+          if (leavingTo) navigateOnce(leavingTo);
         }}
       >
         <div className="flex flex-col items-center gap-3 text-center">
