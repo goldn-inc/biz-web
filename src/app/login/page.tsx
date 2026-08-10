@@ -41,7 +41,11 @@ export default function LoginPage() {
 
 function LoginInner() {
   const router = useRouter();
+  const params = useSearchParams();
   const reduced = Boolean(useReducedMotion());
+  // 세션 가드가 붙여 보낸 원래 목적지(?next=/gp/…) — 내부 경로만 신뢰한다(오픈 리다이렉트 방지)
+  const rawNext = params.get("next");
+  const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : null;
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -98,13 +102,12 @@ function LoginInner() {
         body: { loginId, password },
       });
       saveBizSession(result.accessToken, result.account);
-      // 도매 등급 계정의 첫 화면은 카탈로그다 — 들어가자마자 상품 사진과 가격이 보여야
-      // 한다는 요구(2026-08-10). 등급 없는 계정은 카탈로그가 비므로 기존 대시보드 유지.
+      // 가려던 곳(next)이 있으면 그리로. 없으면 도매 등급 계정의 첫 화면은 카탈로그 —
+      // 들어가자마자 상품 사진과 가격이 보여야 한다는 요구(2026-08-10).
+      // 등급 없는 계정은 카탈로그가 비므로 기존 대시보드 유지.
       const target = result.account.mustChangePassword
         ? "/change-password"
-        : isWholesaleTier(result.account.tier)
-          ? "/wholesale"
-          : "/dashboard";
+        : (nextPath ?? (isWholesaleTier(result.account.tier) ? "/wholesale" : "/dashboard"));
       if (reduced) {
         navigateOnce(target);
       } else {

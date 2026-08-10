@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   clearBizSession,
   getBizSessionServerSnapshot,
@@ -26,6 +26,7 @@ const BizSessionContext = createContext<BizSessionContextValue | null>(null);
  */
 export function BizSessionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const hydrated = useSyncExternalStore(
     subscribeBizSession,
     getHydratedSnapshot,
@@ -40,11 +41,12 @@ export function BizSessionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (!hydrated) return; // 하이드레이션 전 세션 null 은 판정 보류(하드 리로드 오탈락 방지)
     if (!session) {
-      router.replace("/login");
+      // 가려던 곳을 들려 보낸다 — GP 직행 링크(/gp/…)가 로그인 후 카탈로그로 새지 않게
+      router.replace(pathname ? `/login?next=${encodeURIComponent(pathname)}` : "/login");
     } else if (session.account.mustChangePassword) {
       router.replace("/change-password");
     }
-  }, [hydrated, session, router]);
+  }, [hydrated, session, router, pathname]);
 
   if (!hydrated || !session || session.account.mustChangePassword) return null;
 
