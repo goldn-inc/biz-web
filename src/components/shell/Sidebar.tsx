@@ -78,6 +78,16 @@ export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
 
       <div className="flex-1" />
 
+      {/* 본사 관리자 진입(별도 로그인 필요) — 사장님 동선: 판매 화면에서 관리 도구로 바로 이동 */}
+      <a
+        href="https://admin-web-7hff.onrender.com/admin"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-caption hover:text-body hover:bg-slate-100 transition-colors"
+      >
+        본사 관리자 <span aria-hidden>↗</span>
+      </a>
+
       <div className="border-t border-line pt-4 px-2.5 flex items-center gap-3">
         {/* 사이드바에는 「더보기」가 없어 매장 정보 진입점이 이 카드다(탭바 쪽은 /more 목록). */}
         <Link

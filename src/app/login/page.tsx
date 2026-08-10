@@ -4,7 +4,7 @@ import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "r
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { bizApiFetch, BizApiError } from "@/lib/api";
-import { saveBizSession, type BizAccount } from "@/lib/session";
+import { isWholesaleTier, saveBizSession, type BizAccount } from "@/lib/session";
 import { FloatingBackdrop } from "@/components/FloatingBackdrop";
 
 /** 온보딩 슈루룩 전환의 후반부 — 주황 오버레이가 걷히며 로그인 화면이 드러난다. */
@@ -98,12 +98,18 @@ function LoginInner() {
         body: { loginId, password },
       });
       saveBizSession(result.accessToken, result.account);
-      const target = result.account.mustChangePassword ? "/change-password" : "/dashboard";
+      // 도매 등급 계정의 첫 화면은 카탈로그다 — 들어가자마자 상품 사진과 가격이 보여야
+      // 한다는 요구(2026-08-10). 등급 없는 계정은 카탈로그가 비므로 기존 대시보드 유지.
+      const target = result.account.mustChangePassword
+        ? "/change-password"
+        : isWholesaleTier(result.account.tier)
+          ? "/wholesale"
+          : "/dashboard";
       if (reduced) {
         navigateOnce(target);
       } else {
         // 도착 화면(셸)이 SweepReveal 로 오버레이를 걷어낸다
-        if (target === "/dashboard") sessionStorage.setItem("biz-sweep-arrive", "1");
+        if (target !== "/change-password") sessionStorage.setItem("biz-sweep-arrive", "1");
         setLeavingTo(target);
       }
     } catch (error) {
