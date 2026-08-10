@@ -3,6 +3,7 @@ import {
   CatalogIcon,
   HomeIcon,
   ScaleIcon,
+  StoreIcon,
   TicketIcon,
   WholesaleIcon,
 } from "@/components/icons";
@@ -39,6 +40,7 @@ export const SIDEBAR_NAV: NavItem[] = withLockdown([
   { href: "/coupons", label: "쿠폰", icon: TicketIcon },
   { href: "/catalog", label: "카탈로그 신청", icon: CatalogIcon },
   { href: "/wholesale", label: "도매 주문", icon: WholesaleIcon, tierOnly: true },
+  { href: "/gp", label: "매장 프로그램", icon: StoreIcon },
 ]);
 
 /** 하단 탭바(lg 미만) 4항목 + 더보기. */
