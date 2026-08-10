@@ -17,6 +17,9 @@ import { bizApiFetch, BizApiError } from "@/lib/api";
 
 type WholesaleTierValue = Exclude<BizTier, "NONE">;
 
+/** 가격 산출 방식 — 상품 속성(백엔드 미러). SPOT_LINKED 는 금액이 시세로 만들어진다. */
+type PricingMode = "FIXED" | "SPOT_LINKED";
+
 /** GET /biz/wholesale/products 항목 — unitPrice 는 내 등급 전용 단가(서버가 등급 필터). */
 type ApiProduct = {
   id: string;
@@ -26,11 +29,55 @@ type ApiProduct = {
   weightGram: number | null;
   purityCode: string;
   unitPrice: number;
+  pricingMode: PricingMode;
+  metalType: "GOLD" | "SILVER";
+  /** 1개 순중량(g) — 순금/순은 환산. 시세가 바뀌어도 이 값은 안 움직인다. */
+  pureGram: number | null;
+  laborFee: number | null;
+  /** 값이 있으면 주문할 수 없다(공임 미설정·순도 미상·시세 없음). */
+  priceUnavailableReason: string | null;
+};
+
+/** 카탈로그 상단 시세 띠 — 잠금이 아니라 현재값. 주문 시각에 다시 잠긴다. */
+type ApiSpotBand = {
+  gold24kKrwPerGram: number | null;
+  gold18kKrwPerGram: number | null;
+  gold14kKrwPerGram: number | null;
+  silverKrwPerGram: number | null;
+  asOf: string | null;
 };
 
 type OrderStatus = "REQUESTED" | "CONFIRMED" | "COMPLETED" | "CANCELED";
 
-/** GET/POST /biz/wholesale/orders 항목. */
+/** 주문 라인 — 수량·금액의 SSOT. 헤더 필드는 첫 라인 기준 대표값이다. */
+type ApiOrderLine = {
+  productId: string;
+  productName: string;
+  productImageUrl: string | null;
+  quantity: number;
+  pricingMode: PricingMode;
+  pureGram: number | null;
+  laborFee: number | null;
+  unitPrice: number;
+  lineAmount: number;
+};
+
+/** 주문 시각에 잠근 시세. 고정가 품목만 담긴 주문은 잠금이 없다(null). */
+type ApiPriceLock = {
+  id: string;
+  gold24kKrwPerGram: number;
+  silverKrwPerGram: number | null;
+  lockedAt: string;
+  /** 입금 기한 — 넘기면 본사 재잠금이 필요하다. */
+  expiresAt: string | null;
+  isExpired: boolean;
+};
+
+/**
+ * GET/POST /biz/wholesale/orders 항목.
+ * productName/unitPrice 는 첫 라인 대표값이고 quantity 는 라인 수량 합이다 —
+ * 다품목 주문의 금액은 lines 로 본다.
+ */
 type ApiOrder = {
   id: string;
   productId: string;
@@ -44,6 +91,12 @@ type ApiOrder = {
   memo: string | null;
   createdAt: string;
   updatedAt: string;
+  lines: ApiOrderLine[];
+  lineCount: number;
+  metalType: "GOLD" | "SILVER" | null;
+  totalPureGram: number | null;
+  totalLaborFee: number | null;
+  priceLock: ApiPriceLock | null;
 };
 
 /** GET /biz/wholesale/orders/:id — 진행 스테퍼용 개체(시리얼) 상태 + 협력공장(supplierRef) 포함. */
@@ -79,10 +132,27 @@ function kstDateLabel(iso: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
+/** ISO → KST M/D HH:MM 라벨(입금 기한처럼 시각까지 필요한 자리). */
+function kstDateTimeLabel(iso: string): string {
+  const d = new Date(new Date(iso).getTime() + 9 * 3600_000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+/** 중량 표기(소수 3자리까지). */
+function gram(n: number): string {
+  return `${n.toLocaleString("ko-KR", { maximumFractionDigits: 3 })}g`;
+}
+
 /** 상품 스펙 요약 — 순도코드 · 중량. */
 function specOf(p: ApiProduct): string {
   const parts = [p.purityCode, p.weightGram != null ? `${p.weightGram}g` : null];
   return parts.filter(Boolean).join(" · ");
+}
+
+/** 순중량 라벨 — 금이면 "순금", 은이면 "순은". */
+function pureLabel(metal: "GOLD" | "SILVER" | null): string {
+  return metal === "SILVER" ? "순은" : "순금";
 }
 
 export default function WholesalePage() {
@@ -140,10 +210,10 @@ function TierBadge({ tier }: { tier: WholesaleTierValue }) {
   );
 }
 
-type View =
-  | { kind: "list" }
-  | { kind: "order"; product: ApiProduct }
-  | { kind: "complete"; order: ApiOrder };
+type View = { kind: "list" } | { kind: "cart" } | { kind: "complete"; order: ApiOrder };
+
+/** 장바구니 = 상품 id → 수량. 한 번에 여러 종을 한 발주로 보내는 자리다. */
+type Cart = Record<string, number>;
 
 function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
   const { token } = useBizSession();
@@ -151,6 +221,7 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
   const [tab, setTab] = useState<"catalog" | "history">("catalog");
   const [category, setCategory] = useState<string>("전체");
   const [view, setView] = useState<View>({ kind: "list" });
+  const [cart, setCart] = useState<Cart>({});
 
   // 로딩은 "요청 키 ↔ 결과 키 불일치"로 파생(set-state-in-effect 회피, 거래 화면과 동일 패턴)
   const [reloadCount, setReloadCount] = useState(0);
@@ -159,6 +230,7 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
     key: string;
     products?: ApiProduct[];
     orders?: ApiOrder[];
+    spot?: ApiSpotBand;
     error?: string;
   } | null>(null);
   const loading = result?.key !== requestKey;
@@ -167,6 +239,7 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
     [loading, result],
   );
   const orders = (!loading && result?.orders) || [];
+  const spot = (!loading && result?.spot) || null;
   const loadError = !loading ? (result?.error ?? null) : null;
 
   useEffect(() => {
@@ -174,11 +247,18 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
     void (async () => {
       try {
         const [productsRes, ordersRes] = await Promise.all([
-          bizApiFetch<{ products: ApiProduct[] }>("/biz/wholesale/products", { token }),
+          bizApiFetch<{ products: ApiProduct[]; spot: ApiSpotBand }>("/biz/wholesale/products", {
+            token,
+          }),
           bizApiFetch<{ orders: ApiOrder[] }>("/biz/wholesale/orders", { token }),
         ]);
         if (!cancelled) {
-          setResult({ key: requestKey, products: productsRes.products, orders: ordersRes.orders });
+          setResult({
+            key: requestKey,
+            products: productsRes.products,
+            spot: productsRes.spot,
+            orders: ordersRes.orders,
+          });
         }
       } catch (error) {
         if (!cancelled) {
@@ -195,6 +275,31 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
     };
   }, [requestKey, token]);
 
+  /** 담기 — 같은 상품을 또 담으면 수량을 더한다. */
+  function addToCart(productId: string, qty: number) {
+    setCart((prev) => ({ ...prev, [productId]: Math.min(9999, (prev[productId] ?? 0) + qty) }));
+  }
+
+  /** 장바구니 수량 지정(0 이하면 제거). */
+  function setCartQty(productId: string, qty: number) {
+    setCart((prev) => {
+      const next = { ...prev };
+      if (qty <= 0) delete next[productId];
+      else next[productId] = Math.min(9999, qty);
+      return next;
+    });
+  }
+
+  /** 담긴 상품을 카탈로그 순서대로 편다 — 담긴 뒤 판매가 끊긴 상품은 자동으로 빠진다. */
+  const cartLines = useMemo(
+    () =>
+      products
+        .filter((p) => (cart[p.id] ?? 0) > 0)
+        .map((p) => ({ product: p, quantity: cart[p.id] })),
+    [products, cart],
+  );
+  const cartTotal = cartLines.reduce((sum, l) => sum + l.product.unitPrice * l.quantity, 0);
+
   const categories = useMemo(() => {
     const set = new Set(products.map((p) => p.category));
     return ["전체", ...Array.from(set)];
@@ -209,14 +314,17 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
     setReloadCount((n) => n + 1);
   }
 
-  if (view.kind === "order") {
+  if (view.kind === "cart") {
     return (
-      <OrderForm
+      <CartView
         tier={tier}
         token={token}
-        product={view.product}
+        lines={cartLines}
+        spot={spot}
         onBack={() => setView({ kind: "list" })}
+        onQty={setCartQty}
         onCreated={(order) => {
+          setCart({});
           refresh();
           setView({ kind: "complete", order });
         }}
@@ -281,6 +389,8 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
         <ErrorState message={loadError} onRetry={refresh} />
       ) : tab === "catalog" ? (
         <>
+          <SpotBandStrip spot={spot} />
+
           {/* 카테고리가 1종뿐이면 전체/단일 필터는 군더더기 — 2종 이상일 때만 노출 */}
           {categories.length > 2 ? (
             <div className="flex gap-2 flex-wrap">
@@ -309,11 +419,20 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
                   key={product.id}
                   product={product}
                   priceLabel={meta.priceLabel}
-                  onOrder={() => setView({ kind: "order", product })}
+                  inCart={cart[product.id] ?? 0}
+                  onAdd={(qty) => addToCart(product.id, qty)}
                 />
               ))}
             </div>
           )}
+
+          <CartBar
+            lineCount={cartLines.length}
+            quantity={cartLines.reduce((sum, l) => sum + l.quantity, 0)}
+            total={cartTotal}
+            onOpen={() => setView({ kind: "cart" })}
+            onClear={() => setCart({})}
+          />
         </>
       ) : (
         <OrderHistory orders={orders} token={token} onChanged={refresh} />
@@ -322,15 +441,95 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
   );
 }
 
+/**
+ * 상단 시세 띠 — 24K·18K·14K·은의 현재 시세(원/g).
+ * **잠금이 아니다.** 시세 연동 상품 금액은 발주 시각에 다시 잠기고 그때부터 기한이 걸린다.
+ */
+function SpotBandStrip({ spot }: { spot: ApiSpotBand | null }) {
+  const items = [
+    { label: "24K", value: spot?.gold24kKrwPerGram ?? null },
+    { label: "18K", value: spot?.gold18kKrwPerGram ?? null },
+    { label: "14K", value: spot?.gold14kKrwPerGram ?? null },
+    { label: "은", value: spot?.silverKrwPerGram ?? null },
+  ];
+  return (
+    <div className="bg-white border border-line rounded-2xl shadow-sm px-4 md:px-5 py-3 flex items-center gap-x-6 gap-y-2 flex-wrap">
+      <span className="text-[11px] font-extrabold text-caption shrink-0">오늘 시세 (원/g)</span>
+      {items.map((it) => (
+        <span key={it.label} className="flex items-baseline gap-1.5">
+          <span className="text-[11px] font-extrabold text-primary">{it.label}</span>
+          <span className="text-base font-extrabold tabular-nums">
+            {it.value != null ? it.value.toLocaleString("ko-KR") : "—"}
+          </span>
+        </span>
+      ))}
+      <span className="text-[11px] text-caption ml-auto">
+        시세 연동 상품 금액은 발주하는 순간 잠깁니다
+        {spot?.asOf ? ` · ${kstDateTimeLabel(spot.asOf)} 기준` : ""}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * 담긴 품목 요약 바 — 카탈로그 하단에 붙어 여러 종을 한 발주로 보내는 진입점.
+ * 담긴 게 없으면 아무것도 안 그린다(빈 바가 자리만 차지하지 않게).
+ */
+function CartBar({
+  lineCount,
+  quantity,
+  total,
+  onOpen,
+  onClear,
+}: {
+  lineCount: number;
+  quantity: number;
+  total: number;
+  onOpen: () => void;
+  onClear: () => void;
+}) {
+  if (lineCount === 0) return null;
+  return (
+    <div className="sticky bottom-4 z-10 bg-white border-2 border-orange-100 rounded-2xl shadow-lg shadow-primary/10 px-4 md:px-5 py-3 flex items-center gap-4 flex-wrap">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-sm font-extrabold">담은 품목 {lineCount}종</span>
+        <span className="text-xs text-caption tabular-nums">총 {quantity}개</span>
+      </div>
+      <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+        <span className="text-lg font-extrabold text-primary tabular-nums">{won(total)}</span>
+        <button
+          onClick={onClear}
+          className="h-10 px-3.5 rounded-xl border border-line bg-white text-caption text-xs font-bold hover:text-body transition"
+        >
+          비우기
+        </button>
+        <Button className="h-10 px-5 rounded-xl text-xs" onClick={onOpen}>
+          발주서 작성
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 카탈로그 카드 — 수량을 정해 장바구니에 담는다.
+ * 시세 연동 상품은 확정된 값(순중량·공임)과 시세로 만든 금액을 갈라 보여준다.
+ */
 function ProductCard({
   product,
   priceLabel,
-  onOrder,
+  inCart,
+  onAdd,
 }: {
   product: ApiProduct;
   priceLabel: string;
-  onOrder: () => void;
+  inCart: number;
+  onAdd: (qty: number) => void;
 }) {
+  const [qty, setQty] = useState(1);
+  const spotLinked = product.pricingMode === "SPOT_LINKED";
+  const blocked = product.priceUnavailableReason;
+
   return (
     <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden flex flex-col">
       <div className="relative aspect-[4/3] bg-amber-100/60 grid place-items-center text-amber-600/50 overflow-hidden">
@@ -340,6 +539,11 @@ function ProductCard({
         ) : (
           <GemIcon className="w-11 h-11" />
         )}
+        {inCart > 0 && (
+          <span className="absolute top-2.5 right-2.5 bg-primary text-white text-[11px] font-extrabold rounded-full px-2.5 py-1 shadow-md tabular-nums">
+            담김 {inCart}개
+          </span>
+        )}
       </div>
       <div className="p-4 flex flex-col gap-2.5 flex-1">
         <div>
@@ -348,45 +552,120 @@ function ProductCard({
             {(CATEGORY_LABEL[product.category] ?? product.category) + " · " + specOf(product)}
           </div>
         </div>
-        <div className="mt-auto flex items-end justify-between gap-2.5">
+
+        {/* 시세 연동 상품은 "안 바뀌는 값"을 먼저 보여준다 — 금액은 시세를 대입한 결과일 뿐이다. */}
+        {spotLinked && (
+          <div className="bg-surface border border-line rounded-xl px-3 py-2 flex items-center gap-x-3 gap-y-1 flex-wrap">
+            <span className="text-[11px] text-caption">
+              {pureLabel(product.metalType)}{" "}
+              <strong className="text-body tabular-nums">
+                {product.pureGram != null ? gram(product.pureGram) : "—"}
+              </strong>
+            </span>
+            <span className="text-[11px] text-caption">
+              공임{" "}
+              <strong className="text-body tabular-nums">
+                {product.laborFee != null ? won(product.laborFee) : "—"}
+              </strong>
+            </span>
+          </div>
+        )}
+
+        <div className="mt-auto flex flex-col gap-2.5">
           <div>
-            <div className="text-[11px] font-bold text-primary">{priceLabel}</div>
+            <div className="text-[11px] font-bold text-primary">
+              {priceLabel}
+              {spotLinked ? " · 시세 반영" : ""}
+            </div>
             <div className="text-lg font-extrabold tabular-nums">
-              {product.unitPrice.toLocaleString("ko-KR")}
-              <span className="text-xs font-semibold text-caption">원</span>
+              {blocked ? (
+                <span className="text-sm font-bold text-caption">가격 산출 불가</span>
+              ) : (
+                <>
+                  {product.unitPrice.toLocaleString("ko-KR")}
+                  <span className="text-xs font-semibold text-caption">원</span>
+                </>
+              )}
             </div>
           </div>
-          <button
-            onClick={onOrder}
-            className="shrink-0 h-10 px-4 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-bold transition"
-          >
-            주문하기
-          </button>
+
+          {blocked ? (
+            <p className="text-[11px] leading-relaxed text-red-600 font-medium m-0">{blocked}</p>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  aria-label="수량 줄이기"
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  disabled={qty <= 1}
+                  className="w-9 h-10 rounded-l-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition disabled:opacity-40"
+                >
+                  <MinusIcon className="w-4 h-4" />
+                </button>
+                <div className="w-11 h-10 border-y border-line bg-white grid place-items-center text-sm font-extrabold tabular-nums">
+                  {qty}
+                </div>
+                <button
+                  aria-label="수량 늘리기"
+                  onClick={() => setQty((q) => Math.min(9999, q + 1))}
+                  className="w-9 h-10 rounded-r-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition"
+                >
+                  <PlusIcon className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={() => onAdd(qty)}
+                className="flex-1 h-10 px-4 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-bold transition"
+              >
+                담기
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function OrderForm({
+/** 발주서 라인 — 카탈로그 상품 + 담은 수량. */
+type CartLine = { product: ApiProduct; quantity: number };
+
+/**
+ * 발주서 — 담은 여러 종을 **한 건**으로 보낸다.
+ *
+ * 이전에는 상품 하나가 곧 주문 하나여서 3종을 담으면 주문이 3건으로 쪼개졌다.
+ * 서버에 { lines: [...] } 로 보내면 헤더 1건 + 라인 N개가 만들어진다.
+ */
+function CartView({
   tier,
   token,
-  product,
+  lines,
+  spot,
   onBack,
+  onQty,
   onCreated,
 }: {
   tier: WholesaleTierValue;
   token: string | null;
-  product: ApiProduct;
+  lines: CartLine[];
+  spot: ApiSpotBand | null;
   onBack: () => void;
+  onQty: (productId: string, qty: number) => void;
   onCreated: (order: ApiOrder) => void;
 }) {
   const meta = TIER_META[tier];
-  const [qty, setQty] = useState(1);
   const [memo, setMemo] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const total = product.unitPrice * qty;
+
+  const total = lines.reduce((sum, l) => sum + l.product.unitPrice * l.quantity, 0);
+  const spotLines = lines.filter((l) => l.product.pricingMode === "SPOT_LINKED");
+  const metals = new Set(spotLines.map((l) => l.product.metalType));
+  const totalPureGram = spotLines.reduce(
+    (sum, l) => sum + (l.product.pureGram ?? 0) * l.quantity,
+    0,
+  );
+  const totalLaborFee = spotLines.reduce((sum, l) => sum + (l.product.laborFee ?? 0) * l.quantity, 0);
 
   async function handleConfirm() {
     setSubmitting(true);
@@ -395,15 +674,14 @@ function OrderForm({
       const order = await bizApiFetch<ApiOrder>("/biz/wholesale/orders", {
         method: "POST",
         body: {
-          productId: product.id,
-          quantity: qty,
+          lines: lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
           ...(memo.trim() ? { memo: memo.trim() } : {}),
         },
         token,
       });
       onCreated(order);
     } catch (e) {
-      setError(e instanceof BizApiError ? e.message : "주문을 접수하지 못했습니다.");
+      setError(e instanceof BizApiError ? e.message : "발주를 접수하지 못했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -418,56 +696,30 @@ function OrderForm({
         >
           ← 카탈로그
         </button>
-        <h1 className="text-xl md:text-2xl font-extrabold tracking-tight m-0">주문서 작성</h1>
+        <h1 className="text-xl md:text-2xl font-extrabold tracking-tight m-0">발주서 작성</h1>
         <TierBadge tier={tier} />
       </div>
 
       <div className="flex gap-5 flex-wrap items-start">
         <section className="flex-[1.6] min-w-80 bg-white border border-line rounded-3xl shadow-sm p-5 md:p-6 flex flex-col gap-[18px]">
-          <h2 className="text-base font-extrabold m-0">상품 정보</h2>
-          <div className="flex gap-3.5 items-center bg-surface border border-line rounded-2xl p-3.5">
-            <div className="w-[72px] h-[72px] rounded-xl bg-amber-100/60 grid place-items-center text-amber-600/50 shrink-0 overflow-hidden">
-              {product.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- 외부(R2) 이미지
-                <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <GemIcon className="w-7 h-7" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-extrabold">{product.name}</div>
-              <div className="text-xs text-caption">{specOf(product)}</div>
-              <div className="flex items-baseline gap-1.5 mt-0.5">
-                <span className="text-[11px] font-bold text-primary">{meta.priceLabel}</span>
-                <span className="text-sm font-extrabold tabular-nums">{won(product.unitPrice)}</span>
-              </div>
-            </div>
-          </div>
+          <h2 className="text-base font-extrabold m-0">담은 품목 {lines.length}종</h2>
 
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-body">수량</label>
-            <div className="flex items-center gap-2.5">
-              <button
-                aria-label="수량 줄이기"
-                onClick={() => setQty((q) => Math.max(1, q - 1))}
-                disabled={qty <= 1}
-                className="w-12 h-12 rounded-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-line disabled:hover:text-body"
-              >
-                <MinusIcon className="w-5 h-5" />
-              </button>
-              <div className="w-24 h-12 rounded-xl border border-line bg-white grid place-items-center text-base font-extrabold tabular-nums">
-                {qty}
-              </div>
-              <button
-                aria-label="수량 늘리기"
-                onClick={() => setQty((q) => Math.min(9999, q + 1))}
-                className="w-12 h-12 rounded-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition"
-              >
-                <PlusIcon className="w-5 h-5" />
-              </button>
-              <span className="text-sm text-caption">개</span>
+          {lines.length === 0 ? (
+            <div className="border border-dashed border-slate-300 rounded-2xl px-5 py-8 text-center text-xs text-caption leading-relaxed">
+              담은 품목이 없습니다 — 카탈로그에서 담아 주세요.
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {lines.map((l) => (
+                <CartLineRow
+                  key={l.product.id}
+                  line={l}
+                  priceLabel={meta.priceLabel}
+                  onQty={(q) => onQty(l.product.id, q)}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-body">
@@ -484,19 +736,50 @@ function OrderForm({
         </section>
 
         <section className="flex-1 min-w-72 bg-white border-2 border-orange-100 rounded-3xl shadow-lg shadow-primary/5 p-5 md:p-6 flex flex-col gap-3.5">
-          <h3 className="text-sm font-extrabold m-0">주문 요약</h3>
+          <h3 className="text-sm font-extrabold m-0">발주 요약</h3>
+
+          {/* 확정되는 값과 시세로 만들어지는 값을 갈라 보여준다 — 재잠금 때 뭐가 안 바뀌는지가 여기서 갈린다. */}
+          {spotLines.length > 0 && (
+            <div className="bg-surface border border-line rounded-2xl px-3.5 py-3 flex flex-col gap-1.5">
+              <div className="text-[11px] font-extrabold text-caption">발주로 확정되는 값</div>
+              {metals.size === 1 ? (
+                <div className="flex justify-between">
+                  <span className="text-xs text-caption">{pureLabel([...metals][0])} 환산 중량</span>
+                  <span className="text-sm font-bold tabular-nums">{gram(totalPureGram)}</span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-caption leading-relaxed">
+                  금·은이 섞여 있어 순중량 합은 품목별로 봅니다.
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-xs text-caption">공임 합계</span>
+                <span className="text-sm font-bold tabular-nums">{won(totalLaborFee)}</span>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-between">
-            <span className="text-xs text-caption">단가 ({meta.priceLabel.replace(" 단가", "")})</span>
-            <span className="text-sm font-bold tabular-nums">{won(product.unitPrice)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-caption">수량</span>
-            <span className="text-sm font-bold tabular-nums">{qty}개</span>
+            <span className="text-xs text-caption">품목 / 수량</span>
+            <span className="text-sm font-bold tabular-nums">
+              {lines.length}종 / {lines.reduce((sum, l) => sum + l.quantity, 0)}개
+            </span>
           </div>
           <div className="border-t border-dashed border-orange-300 pt-3 flex justify-between items-baseline">
-            <span className="text-sm font-bold text-body">총 주문 금액</span>
+            <span className="text-sm font-bold text-body">총 발주 금액</span>
             <span className="text-xl font-extrabold text-primary tabular-nums">{won(total)}</span>
           </div>
+
+          {spotLines.length > 0 && (
+            <p className="text-[11px] leading-relaxed text-caption m-0 bg-surface border border-line rounded-xl px-3 py-2.5">
+              시세 연동 품목이 있어 <strong className="text-body">발주하는 순간 시세가 잠기고</strong>{" "}
+              입금 기한이 걸립니다. 기한을 넘기면 본사가 시세를 다시 잠급니다.
+              {spot?.gold24kKrwPerGram != null
+                ? ` 현재 24K ${spot.gold24kKrwPerGram.toLocaleString("ko-KR")}원/g.`
+                : ""}
+            </p>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
               <AlertCircleIcon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -506,16 +789,88 @@ function OrderForm({
           <Button
             className="h-14 rounded-2xl text-base shadow-primary/25"
             onClick={() => void handleConfirm()}
-            disabled={submitting}
+            disabled={submitting || lines.length === 0}
           >
-            {submitting ? "접수 중..." : "주문 확정"}
+            {submitting ? "접수 중..." : "발주 확정"}
           </Button>
           <p className="text-xs leading-relaxed text-caption m-0">
-            주문 확정 후 본사 확인을 거쳐 출고됩니다. 결제·정산 조건은 계약 조건을 따릅니다.
+            발주 확정 후 본사 확인을 거쳐 출고됩니다. 결제·정산 조건은 계약 조건을 따릅니다.
           </p>
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * 발주서의 품목 한 줄 — 수량 조절·삭제.
+ * 시세 연동 품목은 순중량·공임을 함께 적어 금액이 어디서 나왔는지 드러낸다.
+ */
+function CartLineRow({
+  line,
+  priceLabel,
+  onQty,
+}: {
+  line: CartLine;
+  priceLabel: string;
+  onQty: (qty: number) => void;
+}) {
+  const { product, quantity } = line;
+  return (
+    <div className="flex gap-3.5 items-center bg-surface border border-line rounded-2xl p-3.5 flex-wrap">
+      <div className="w-[60px] h-[60px] rounded-xl bg-amber-100/60 grid place-items-center text-amber-600/50 shrink-0 overflow-hidden">
+        {product.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 외부(R2) 이미지
+          <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <GemIcon className="w-6 h-6" />
+        )}
+      </div>
+      <div className="flex-1 min-w-40">
+        <div className="text-sm font-extrabold leading-snug">{product.name}</div>
+        <div className="text-xs text-caption">
+          {product.pricingMode === "SPOT_LINKED"
+            ? `${pureLabel(product.metalType)} ${product.pureGram != null ? gram(product.pureGram) : "—"} · 공임 ${product.laborFee != null ? won(product.laborFee) : "—"}`
+            : specOf(product)}
+        </div>
+        <div className="flex items-baseline gap-1.5 mt-0.5">
+          <span className="text-[11px] font-bold text-primary">{priceLabel}</span>
+          <span className="text-sm font-extrabold tabular-nums">{won(product.unitPrice)}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-1">
+          <button
+            aria-label={`${product.name} 수량 줄이기`}
+            onClick={() => onQty(quantity - 1)}
+            className="w-9 h-10 rounded-l-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition"
+          >
+            <MinusIcon className="w-4 h-4" />
+          </button>
+          <div className="w-12 h-10 border-y border-line bg-white grid place-items-center text-sm font-extrabold tabular-nums">
+            {quantity}
+          </div>
+          <button
+            aria-label={`${product.name} 수량 늘리기`}
+            onClick={() => onQty(quantity + 1)}
+            className="w-9 h-10 rounded-r-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition"
+          >
+            <PlusIcon className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="w-28 text-right">
+          <div className="text-sm font-extrabold tabular-nums">
+            {won(product.unitPrice * quantity)}
+          </div>
+          <button
+            onClick={() => onQty(0)}
+            className="text-[11px] font-bold text-caption hover:text-red-600 transition"
+          >
+            빼기
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -601,13 +956,22 @@ function OrderHistory({
                 <div className="flex-[2] min-w-40">
                   <div className="text-sm font-bold truncate">{o.productName}</div>
                   <div className="text-xs text-caption tabular-nums">
-                    {o.quantity}개 × {won(o.unitPrice)}
+                    {/* 다품목은 단가가 첫 라인 대표값이라 합계와 안 맞는다 — 종수만 밝힌다. */}
+                    {o.lineCount > 1
+                      ? `${o.lineCount}종 · 총 ${o.quantity}개`
+                      : `${o.quantity}개 × ${won(o.unitPrice)}`}
                     {o.memo ? ` · ${o.memo}` : ""}
                   </div>
                 </div>
                 <div className="flex-1 min-w-28 text-right text-sm font-extrabold tabular-nums">
                   {o.status === "CANCELED" ? "—" : won(o.totalAmount)}
                 </div>
+                {/* 기한이 지난 시세 잠금은 재잠금 전까지 금액이 확정이 아니다 — 목록에서 바로 보여야 한다. */}
+                {o.priceLock?.isExpired && o.status !== "CANCELED" && (
+                  <Badge tone="slate" className="shrink-0">
+                    시세 기한 지남
+                  </Badge>
+                )}
                 <Badge tone={STATUS_META[o.status].tone} className="shrink-0">
                   {STATUS_META[o.status].label}
                 </Badge>
@@ -765,7 +1129,7 @@ function OrderExpandedDetail({ order, token }: { order: ApiOrder; token: string 
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                <SpecCell label="단가" value={won(detail.unitPrice)} sub={tierLabel} />
+                <SpecCell label="품목" value={`${detail.lineCount}종`} sub={tierLabel} />
                 <SpecCell label="수량" value={`${detail.quantity}개`} />
                 <SpecCell
                   label="입고 진행"
@@ -779,6 +1143,11 @@ function OrderExpandedDetail({ order, token }: { order: ApiOrder; token: string 
                 />
               </div>
 
+              {/* 확정된 값(순중량·공임)과 미확정(시세)을 갈라 보여준다 — 재잠금 시 무엇이 안 움직이는지. */}
+              {detail.priceLock && (
+                <PriceLockNotice order={detail} />
+              )}
+
               {detail.memo && (
                 <div className="bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs text-body leading-relaxed">
                   <span className="font-extrabold text-caption mr-1.5">요청사항</span>
@@ -789,11 +1158,18 @@ function OrderExpandedDetail({ order, token }: { order: ApiOrder; token: string 
 
             <div className="flex-1 min-w-56 bg-white border-2 border-orange-100 rounded-2xl shadow-lg shadow-primary/5 p-5 flex flex-col justify-center gap-2.5">
               <div className="text-[11px] font-extrabold text-primary">{tierLabel}</div>
-              <div className="flex justify-between gap-2 text-xs">
-                <span className="text-caption tabular-nums">
-                  {won(detail.unitPrice)} × {detail.quantity}개
-                </span>
-              </div>
+              {detail.totalPureGram != null && (
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-caption">{pureLabel(detail.metalType)} 환산</span>
+                  <span className="font-bold tabular-nums">{gram(detail.totalPureGram)}</span>
+                </div>
+              )}
+              {detail.totalLaborFee != null && (
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-caption">공임 합계</span>
+                  <span className="font-bold tabular-nums">{won(detail.totalLaborFee)}</span>
+                </div>
+              )}
               <div className="border-t border-dashed border-orange-200 pt-2.5">
                 <div className="text-xs font-bold text-body">총 주문 금액</div>
                 <div className="text-2xl font-extrabold text-primary tabular-nums leading-tight">
@@ -802,6 +1178,9 @@ function OrderExpandedDetail({ order, token }: { order: ApiOrder; token: string 
               </div>
             </div>
           </div>
+
+          {/* ── 주문 내역(라인) — 다품목 발주의 수량·금액 SSOT ────────────── */}
+          <OrderLineList lines={detail.lines} />
 
           {/* ── 진행 스테퍼(가로) ────────────────────────────────────────── */}
           {canceled ? (
@@ -907,6 +1286,85 @@ function OrderExpandedDetail({ order, token }: { order: ApiOrder; token: string 
   );
 }
 
+/**
+ * 시세 잠금 안내 — 잠긴 시세와 입금 기한.
+ * 기한이 지나면 금액이 확정이 아니라는 사실을 매장이 먼저 알아야 한다(본사가 재잠금한다).
+ */
+function PriceLockNotice({ order }: { order: ApiOrder }) {
+  const lock = order.priceLock;
+  if (!lock) return null;
+  const perGram = order.metalType === "SILVER" ? lock.silverKrwPerGram : lock.gold24kKrwPerGram;
+  const expired = lock.isExpired;
+  return (
+    <div
+      className={`rounded-xl px-3.5 py-2.5 flex items-center gap-x-4 gap-y-1 flex-wrap border ${
+        expired ? "bg-red-50 border-red-200" : "bg-surface border-line"
+      }`}
+    >
+      <span className={`text-[11px] font-extrabold ${expired ? "text-red-700" : "text-primary"}`}>
+        {expired ? "시세 기한 지남" : "시세 잠금 중"}
+      </span>
+      <span className="text-xs text-caption tabular-nums">
+        잠긴 시세{" "}
+        <strong className="text-body">
+          {perGram != null ? `${perGram.toLocaleString("ko-KR")}원/g` : "—"}
+        </strong>
+      </span>
+      <span className="text-xs text-caption tabular-nums">
+        입금 기한{" "}
+        <strong className="text-body">
+          {lock.expiresAt ? kstDateTimeLabel(lock.expiresAt) : "없음"}
+        </strong>
+      </span>
+      <span className="text-[11px] text-caption">
+        {expired
+          ? "본사가 시세를 다시 잠근 뒤 금액이 확정됩니다 — 순중량·공임은 그대로입니다."
+          : "기한을 넘기면 본사가 시세를 다시 잠급니다 — 순중량·공임은 그대로입니다."}
+      </span>
+    </div>
+  );
+}
+
+/** 주문 라인 목록 — 다품목 발주의 품목별 수량·단가·금액. */
+function OrderLineList({ lines }: { lines: ApiOrderLine[] }) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2.5">
+      <h3 className="text-sm font-extrabold text-body m-0">주문 내역 {lines.length}종</h3>
+      <div className="bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
+        <div className="grid grid-cols-[minmax(0,2fr)_72px_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-5 py-2.5 bg-surface border-b border-line text-[11px] font-extrabold text-caption">
+          <span>품목</span>
+          <span className="text-right">수량</span>
+          <span className="text-right">단가</span>
+          <span className="text-right">금액</span>
+        </div>
+        {lines.map((l) => (
+          <div
+            key={l.productId}
+            className="grid grid-cols-[minmax(0,2fr)_72px_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center px-5 py-3 border-t border-slate-100 first:border-t-0"
+          >
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold truncate">{l.productName}</div>
+              <div className="text-[11px] text-caption tabular-nums">
+                {l.pricingMode === "SPOT_LINKED"
+                  ? `순중량 ${l.pureGram != null ? gram(l.pureGram) : "—"} · 공임 ${l.laborFee != null ? won(l.laborFee) : "—"}`
+                  : "고정가"}
+              </div>
+            </div>
+            <span className="text-right text-[13px] font-semibold tabular-nums">{l.quantity}</span>
+            <span className="text-right text-[13px] text-caption tabular-nums">
+              {won(l.unitPrice)}
+            </span>
+            <span className="text-right text-[13px] font-extrabold tabular-nums">
+              {won(l.lineAmount)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** 인라인 상세의 스펙 셀 — 라벨·값·보조설명 한 칸. */
 function SpecCell({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -938,7 +1396,7 @@ function OrderComplete({
           <CheckIcon className="w-8 h-8" />
         </div>
         <div>
-          <h2 className="text-2xl font-extrabold m-0">주문이 접수되었습니다</h2>
+          <h2 className="text-2xl font-extrabold m-0">발주가 접수되었습니다</h2>
           <div className="text-sm text-caption mt-2">본사 확인 후 출고 일정이 확정됩니다</div>
         </div>
         <div className="w-full bg-surface border border-line rounded-2xl p-[18px] flex flex-col gap-2.5 text-left">
@@ -947,28 +1405,44 @@ function OrderComplete({
             <span className="text-sm font-extrabold text-primary uppercase">{order.id.slice(0, 8)}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-xs text-caption">상품</span>
-            <span className="text-sm font-bold">{order.productName}</span>
+            <span className="text-xs text-caption">품목</span>
+            <span className="text-sm font-bold text-right">{order.productName}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-xs text-caption">수량·단가</span>
+            <span className="text-xs text-caption">품목 / 수량</span>
             <span className="text-sm font-bold tabular-nums">
-              {order.quantity}개 × {won(order.unitPrice)}
+              {order.lineCount}종 / {order.quantity}개
             </span>
           </div>
+          {order.totalPureGram != null && (
+            <div className="flex justify-between gap-3">
+              <span className="text-xs text-caption">{pureLabel(order.metalType)} 환산 중량</span>
+              <span className="text-sm font-bold tabular-nums">{gram(order.totalPureGram)}</span>
+            </div>
+          )}
           <div className="flex justify-between gap-3">
             <span className="text-xs text-caption">총액 ({meta.priceLabel})</span>
             <span className="text-sm font-extrabold text-primary tabular-nums">
               {won(order.totalAmount)}
             </span>
           </div>
+          {order.priceLock?.expiresAt && (
+            <div className="flex justify-between gap-3">
+              <span className="text-xs text-caption">입금 기한</span>
+              <span className="text-sm font-extrabold tabular-nums">
+                {kstDateTimeLabel(order.priceLock.expiresAt)}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between gap-3 items-center">
             <span className="text-xs text-caption">상태</span>
             <Badge tone={STATUS_META[order.status].tone}>{STATUS_META[order.status].label}</Badge>
           </div>
         </div>
         <p className="text-sm leading-relaxed text-body m-0">
-          본사 확인 후 출고 일정이 확정되면 안내드립니다.
+          {order.priceLock?.expiresAt
+            ? "잠긴 시세는 입금 기한까지 유효합니다. 기한을 넘기면 본사가 시세를 다시 잠급니다 — 순중량과 공임은 그대로입니다."
+            : "본사 확인 후 출고 일정이 확정되면 안내드립니다."}
         </p>
         <div className="w-full flex flex-col gap-2.5">
           <Button className="h-[52px] rounded-2xl text-sm shadow-primary/25" onClick={onViewHistory}>
