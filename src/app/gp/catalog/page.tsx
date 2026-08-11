@@ -15,11 +15,13 @@ import {
   type GpCatalogProduct,
   type GpCategory,
   type GpMetalType,
+  type GpStoneRow,
   type GpSupplier,
 } from "@/lib/gp";
 
 const dd = "h-8 px-2 rounded-md border border-line bg-white text-[13px]";
 const NEW_SUPPLIER = "__new__";
+const NEW_STONE = "__new__";
 
 type FormState = {
   name: string;
@@ -31,6 +33,13 @@ type FormState = {
   defaultTagPrice: string;
   supplierSel: string;
   newSupplierName: string;
+  // §9 — 메인/보조 스톤 + 스톤 공임
+  mainStoneSel: string;
+  newMainStoneName: string;
+  mainStoneFee: string;
+  subStoneSel: string;
+  newSubStoneName: string;
+  subStoneFee: string;
   imageKey: string | null;
   imageUrl: string | null;
   memo: string;
@@ -48,6 +57,12 @@ function emptyForm(): FormState {
     defaultTagPrice: "",
     supplierSel: "",
     newSupplierName: "",
+    mainStoneSel: "",
+    newMainStoneName: "",
+    mainStoneFee: "",
+    subStoneSel: "",
+    newSubStoneName: "",
+    subStoneFee: "",
     imageKey: null,
     imageUrl: null,
     memo: "",
@@ -66,6 +81,12 @@ function toForm(p: GpCatalogProduct): FormState {
     defaultTagPrice: p.defaultTagPrice != null ? String(p.defaultTagPrice) : "",
     supplierSel: p.supplierId ?? "",
     newSupplierName: "",
+    mainStoneSel: p.mainStoneId ?? "",
+    newMainStoneName: "",
+    mainStoneFee: p.mainStoneFee != null ? String(p.mainStoneFee) : "",
+    subStoneSel: p.subStoneId ?? "",
+    newSubStoneName: "",
+    subStoneFee: p.subStoneFee != null ? String(p.subStoneFee) : "",
     imageKey: p.imageKey,
     imageUrl: p.imageUrl,
     memo: p.memo ?? "",
@@ -86,11 +107,18 @@ export default function GpCatalogPage() {
   const [q, setQ] = useState("");
   const [view, setView] = useState<"card" | "table">("card");
   const [reload, setReload] = useState(0);
+  /** 스톤 사전의 모델건수 클릭 점프(§9.1) — ?stone=<id> 로 진입하면 필터. */
+  const [stoneFilter, setStoneFilter] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("stone"),
+  );
 
   const [rows, setRows] = useState<GpCatalogProduct[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [suppliers, setSuppliers] = useState<GpSupplier[]>([]);
+  const [stones, setStones] = useState<GpStoneRow[]>([]);
   const [editing, setEditing] = useState<{ id: string | null; form: FormState } | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -104,6 +132,7 @@ export default function GpCatalogPage() {
     if (metal) params.set("metal", metal);
     if (includeInactive) params.set("includeInactive", "true");
     if (q) params.set("q", q);
+    if (stoneFilter) params.set("stoneId", stoneFilter);
     void bizApiFetch<{ products: GpCatalogProduct[] }>(
       `/biz/gp/products?${params.toString()}`,
       { token },
@@ -124,12 +153,15 @@ export default function GpCatalogPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, category, metal, includeInactive, q, reload]);
+  }, [token, category, metal, includeInactive, q, stoneFilter, reload]);
 
   useEffect(() => {
     void bizApiFetch<{ suppliers: GpSupplier[] }>("/biz/gp/suppliers", { token })
       .then((r) => setSuppliers(r.suppliers))
       .catch(() => setSuppliers([]));
+    void bizApiFetch<{ stones: GpStoneRow[] }>("/biz/gp/stones", { token })
+      .then((r) => setStones(r.stones))
+      .catch(() => setStones([]));
   }, [token, reload]);
 
   const uploadImage = useCallback(
@@ -172,6 +204,19 @@ export default function GpCatalogPage() {
       ...(f.supplierSel === NEW_SUPPLIER && f.newSupplierName.trim()
         ? { newSupplierName: f.newSupplierName.trim() }
         : {}),
+      // §9 — 스톤: 선택/인라인 생성/해제(수정에서 「없음」)
+      ...(f.mainStoneSel && f.mainStoneSel !== NEW_STONE ? { mainStoneId: f.mainStoneSel } : {}),
+      ...(f.mainStoneSel === NEW_STONE && f.newMainStoneName.trim()
+        ? { newMainStoneName: f.newMainStoneName.trim() }
+        : {}),
+      ...(editing.id && !f.mainStoneSel ? { clearMainStone: true } : {}),
+      mainStoneFee: f.mainStoneSel ? num(f.mainStoneFee) : undefined,
+      ...(f.subStoneSel && f.subStoneSel !== NEW_STONE ? { subStoneId: f.subStoneSel } : {}),
+      ...(f.subStoneSel === NEW_STONE && f.newSubStoneName.trim()
+        ? { newSubStoneName: f.newSubStoneName.trim() }
+        : {}),
+      ...(editing.id && !f.subStoneSel ? { clearSubStone: true } : {}),
+      subStoneFee: f.subStoneSel ? num(f.subStoneFee) : undefined,
       ...(f.imageKey ? { imageKey: f.imageKey } : {}),
       memo: f.memo.trim() || undefined,
       ...(editing.id ? { isActive: f.isActive } : {}),
@@ -284,6 +329,19 @@ export default function GpCatalogPage() {
             />
             <span className="font-semibold">단종 포함</span>
           </label>
+          {stoneFilter ? (
+            <span className="flex items-center gap-1 px-2 h-8 rounded-md bg-amber-50 text-amber-800 text-[12px] font-semibold">
+              스톤: {stones.find((s) => s.id === stoneFilter)?.name ?? "필터"}
+              <button
+                type="button"
+                onClick={() => setStoneFilter(null)}
+                className="ml-1 hover:text-ink"
+                title="스톤 필터 해제"
+              >
+                ✕
+              </button>
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -340,6 +398,11 @@ export default function GpCatalogPage() {
                     {" · "}
                     {GP_CATEGORY_LABEL[p.category]}
                   </div>
+                  {p.mainStoneName || p.subStoneName ? (
+                    <div className="text-[12px] text-caption truncate">
+                      {[p.mainStoneName, p.subStoneName].filter(Boolean).join(" / ")}
+                    </div>
+                  ) : null}
                   <div className="text-[12px] text-body flex items-center gap-2">
                     <span>공임 {krw(p.defaultLaborFeeKrw)}</span>
                     <span className="ml-auto font-bold text-red-600 tabular-nums">
@@ -371,6 +434,7 @@ export default function GpCatalogPage() {
                 <th className={th}>재질</th>
                 <th className={th}>순도</th>
                 <th className={`${th} text-right`}>표준중량(g)</th>
+                <th className={th}>스톤(메인/보조)</th>
                 <th className={`${th} text-right`}>기본공임</th>
                 <th className={`${th} text-right`}>소비자가(TAG)</th>
                 <th className={th}>매입처</th>
@@ -399,6 +463,9 @@ export default function GpCatalogPage() {
                   <td className={td}>{GP_METAL_LABEL[p.metalType]}</td>
                   <td className={td}>{p.purityCode === "UNKNOWN" ? "미상" : p.purityCode}</td>
                   <td className={`${td} text-right tabular-nums`}>{gram(p.defaultWeightGram)}</td>
+                  <td className={td}>
+                    {[p.mainStoneName, p.subStoneName].filter(Boolean).join(" / ") || "—"}
+                  </td>
                   <td className={`${td} text-right tabular-nums`}>{krw(p.defaultLaborFeeKrw)}</td>
                   <td className={`${td} text-right tabular-nums font-bold text-red-600`}>
                     {krw(p.defaultTagPrice)}
@@ -632,6 +699,67 @@ export default function GpCatalogPage() {
                     />
                   </div>
                 ) : null}
+                {/* §9 — 메인/보조 스톤 + 스톤 공임(골드펜 매입단가 기본/메인/보조 분해) */}
+                {(
+                  [
+                    ["메인스톤", "mainStoneSel", "newMainStoneName", "mainStoneFee"],
+                    ["보조스톤", "subStoneSel", "newSubStoneName", "subStoneFee"],
+                  ] as const
+                ).map(([lbl, selKey, newKey, feeKey]) => (
+                  <div key={selKey} className="col-span-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                    <div>
+                      <div className={label}>{lbl}</div>
+                      <select
+                        value={editing.form[selKey]}
+                        onChange={(e) =>
+                          setEditing(
+                            (c) => c && { ...c, form: { ...c.form, [selKey]: e.target.value } },
+                          )
+                        }
+                        className={dd + " w-full"}
+                      >
+                        <option value="">없음</option>
+                        {stones.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                        <option value={NEW_STONE}>+ 새 스톤…</option>
+                      </select>
+                    </div>
+                    {editing.form[selKey] ? (
+                      <div>
+                        <div className={label}>{lbl} 공임(원)</div>
+                        <input
+                          value={editing.form[feeKey]}
+                          onChange={(e) =>
+                            setEditing(
+                              (c) => c && { ...c, form: { ...c.form, [feeKey]: e.target.value } },
+                            )
+                          }
+                          inputMode="numeric"
+                          className={field}
+                        />
+                      </div>
+                    ) : (
+                      <div />
+                    )}
+                    {editing.form[selKey] === NEW_STONE ? (
+                      <div className="col-span-2">
+                        <div className={label}>새 {lbl} 이름 (예: 랩다이아/조각/3.0)</div>
+                        <input
+                          value={editing.form[newKey]}
+                          onChange={(e) =>
+                            setEditing(
+                              (c) => c && { ...c, form: { ...c.form, [newKey]: e.target.value } },
+                            )
+                          }
+                          className={field}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
                 <div className="col-span-2">
                   <div className={label}>메모</div>
                   <textarea

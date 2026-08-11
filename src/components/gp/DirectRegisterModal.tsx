@@ -52,6 +52,10 @@ export function DirectRegisterModal({
   const [purity, setPurity] = useState("24K");
   const [weightG, setWeightG] = useState("");
   const [cost, setCost] = useState("");
+  // §9.3 — 매입 유형 + 매입대금 현금 지급(체크 시 현금 원장 MANUAL_OUT 자동 기입)
+  const [acquireType, setAcquireType] = useState<"NEW" | "USED_BUY">("NEW");
+  const [payCash, setPayCash] = useState(false);
+  const [cashPaid, setCashPaid] = useState("");
   const [supplierSel, setSupplierSel] = useState("");
   const [newSupplierName, setNewSupplierName] = useState("");
   const [memo, setMemo] = useState("");
@@ -83,6 +87,10 @@ export function DirectRegisterModal({
       setError("품명을 입력해 주세요.");
       return;
     }
+    if (payCash && cashPaid.trim() === "" && cost.trim() === "") {
+      setError("현금 지급 기입에는 지급액 또는 매입원가가 필요합니다.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -103,6 +111,15 @@ export function DirectRegisterModal({
           weightG: weight,
           purityCode: effectivePurity,
           ...(cost.trim() !== "" ? { acquiredUnitCost: Math.round(Number(cost)) } : {}),
+          acquireType,
+          ...(payCash
+            ? {
+                payCash: true,
+                ...(cashPaid.trim() !== ""
+                  ? { cashPaidAmount: Math.round(Number(cashPaid)) }
+                  : {}),
+              }
+            : {}),
           ...(supplierSel && supplierSel !== NEW_SUPPLIER ? { supplierId: supplierSel } : {}),
           ...(supplierSel === NEW_SUPPLIER && newSupplierName.trim()
             ? { newSupplierName: newSupplierName.trim() }
@@ -292,6 +309,49 @@ export function DirectRegisterModal({
                 placeholder="예: 종로도매상"
                 className={field}
               />
+            </div>
+          ) : null}
+
+          {/* §9.3 — 매입 유형 + 현금 지급(고금 매입의 축) */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className={label}>매입 유형</div>
+              <select
+                value={acquireType}
+                onChange={(e) => setAcquireType(e.target.value as "NEW" | "USED_BUY")}
+                className={field}
+              >
+                <option value="NEW">사입(신품)</option>
+                <option value="USED_BUY">고금매입(손님 물건)</option>
+              </select>
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none h-full pt-4">
+                <input
+                  type="checkbox"
+                  checked={payCash}
+                  onChange={(e) => setPayCash(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span className="font-semibold">매입대금 현금 지급</span>
+              </label>
+            </div>
+          </div>
+          {payCash ? (
+            <div>
+              <div className={label}>현금 지급액(원) — 비우면 매입원가로 기입</div>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={cashPaid}
+                onChange={(e) => setCashPaid(e.target.value)}
+                placeholder={cost.trim() !== "" ? cost : "0"}
+                className={`${field} text-right tabular-nums`}
+              />
+              <p className="mt-1 text-[11px] text-caption">
+                현금 원장에 출금으로 자동 기입됩니다. 계좌 이체로 지급했다면 체크를 해제하세요.
+              </p>
             </div>
           ) : null}
 

@@ -5,6 +5,7 @@ import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import { DirectRegisterModal } from "@/components/gp/DirectRegisterModal";
 import {
+  GP_ACQUIRE_LABEL,
   GP_CATEGORY_LABEL,
   GP_EVENT_LABEL,
   GP_METAL_LABEL,
@@ -19,6 +20,7 @@ import {
   type GpItem,
   type GpItemDetail,
   type GpItemListResponse,
+  type GpAcquireType,
   type GpItemStatus,
   type GpMetalType,
   type GpProductLite,
@@ -49,6 +51,7 @@ export default function GpInventoryPage() {
   const [metal, setMetal] = useState<GpMetalType | "">("");
   const [purity, setPurity] = useState("");
   const [category, setCategory] = useState<GpCategory | "">("");
+  const [acquireType, setAcquireType] = useState<GpAcquireType | "">("");
   const [supplierId, setSupplierId] = useState("");
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
@@ -81,9 +84,17 @@ export default function GpInventoryPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  const requestKey = [status, metal, purity, category, supplierId, q, groupByModel, reloadCount].join(
-    "|",
-  );
+  const requestKey = [
+    status,
+    metal,
+    purity,
+    category,
+    acquireType,
+    supplierId,
+    q,
+    groupByModel,
+    reloadCount,
+  ].join("|");
   const loading = result?.key !== requestKey;
   const data = !loading ? result?.data : undefined;
   const loadError = !loading ? (result?.error ?? null) : null;
@@ -110,6 +121,7 @@ export default function GpInventoryPage() {
     if (metal) params.set("metal", metal);
     if (purity) params.set("purity", purity);
     if (category) params.set("category", category);
+    if (acquireType) params.set("acquireType", acquireType);
     if (supplierId) params.set("supplierId", supplierId);
     if (q) params.set("q", q);
     if (groupByModel) params.set("groupByModel", "true");
@@ -131,7 +143,19 @@ export default function GpInventoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, metal, purity, category, supplierId, q, groupByModel, reloadCount, requestKey, token]);
+  }, [
+    status,
+    metal,
+    purity,
+    category,
+    acquireType,
+    supplierId,
+    q,
+    groupByModel,
+    reloadCount,
+    requestKey,
+    token,
+  ]);
 
   /** 폼 드롭다운 데이터 — 화면 진입·등록 후에만 갱신하면 충분하다. */
   const loadFormData = useCallback(() => {
@@ -360,6 +384,15 @@ export default function GpInventoryPage() {
               </option>
             ))}
           </select>
+          <select
+            value={acquireType}
+            onChange={(e) => setAcquireType(e.target.value as GpAcquireType | "")}
+            className={dd}
+          >
+            <option value="">매입구분: 전체</option>
+            <option value="NEW">매입구분: 사입</option>
+            <option value="USED_BUY">매입구분: 고금매입</option>
+          </select>
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={dd}>
             <option value="">입고처: 전체</option>
             {suppliers.map((s) => (
@@ -432,10 +465,12 @@ export default function GpInventoryPage() {
                   <th className={th}>분류</th>
                   <th className={th}>재질</th>
                   <th className={th}>순도</th>
+                  <th className={th}>스톤(메인/보조)</th>
                   <th className={thNum}>실중량(g)</th>
                   <th className={thNum}>순중량(g)</th>
                   <th className={thNum}>매입공임</th>
                   <th className={thNum}>소비자가(TAG)</th>
+                  <th className={th}>매입구분</th>
                   <th className={th}>입고처</th>
                   <th className={th}>입고일</th>
                   <th className={th}>상태</th>
@@ -483,10 +518,14 @@ export default function GpInventoryPage() {
                       <td className={td}>{GP_CATEGORY_LABEL[r.category]}</td>
                       <td className={td}>{GP_METAL_LABEL[r.metalType]}</td>
                       <td className={td}>{r.purityCode === "UNKNOWN" ? "미상" : r.purityCode}</td>
+                      <td className={td}>
+                        {[r.mainStoneName, r.subStoneName].filter(Boolean).join(" / ") || "—"}
+                      </td>
                       <td className={tdNum}>{gram(r.weightG)}</td>
                       <td className={tdNum}>{gram(r.pureGram)}</td>
                       <td className={tdNum}>{krw(r.acquiredLaborFee)}</td>
                       <td className={`${tdNum} font-semibold text-red-600`}>{krw(r.tagPrice)}</td>
+                      <td className={td}>{r.acquireType ? GP_ACQUIRE_LABEL[r.acquireType] : "—"}</td>
                       <td className={td}>{r.supplierName ?? (r.source === "WHOLESALE" ? "본사(도매)" : "—")}</td>
                       <td className={td}>{kstDate(r.receivedAt)}</td>
                       <td className={td}>

@@ -70,6 +70,11 @@ export type GpItem = {
   acquiredLaborFee: number | null;
   /** 모델의 소비자가(TAG가, §8.4) — 판매가 프리필. */
   tagPrice: number | null;
+  /** 매입구분(§9.3) — 사입/고금매입. NULL=구분 없음(도매 유래·과거). */
+  acquireType: GpAcquireType | null;
+  /** 모델 파생 스톤명(§9.1). */
+  mainStoneName: string | null;
+  subStoneName: string | null;
   supplierName: string | null;
   source: GpItemSource;
   status: GpItemStatus;
@@ -126,6 +131,67 @@ export type GpSupplier = {
   type: "PURCHASE" | "REFERRER" | "ETC";
 };
 
+// ── 3차(§9) — 스톤·통계·고금 매입 ─────────────────────────────────
+
+export type GpAcquireType = "NEW" | "USED_BUY";
+
+export const GP_ACQUIRE_LABEL: Record<GpAcquireType, string> = {
+  NEW: "사입",
+  USED_BUY: "고금매입",
+};
+
+/** 스톤 사전 행(§9.1) — 골드펜 스톤관리 대응. */
+export type GpStoneRow = {
+  id: string;
+  name: string;
+  memo: string | null;
+  isActive: boolean;
+  productCount: number;
+};
+
+/** 기간×차원 판매 집계 행(§9.2) — 반품 제외, COMPLETED 만. */
+export type GpStatsSalesRow = {
+  key: string;
+  lineCount: number;
+  pureGramSum: number;
+  salesTotal: number;
+  costTotal: number;
+  marginTotal: number;
+};
+
+export type GpStatsSalesResponse = {
+  saleCount: number;
+  salesTotal: number;
+  costTotal: number;
+  marginTotal: number;
+  purchaseTotal: number;
+  rows: GpStatsSalesRow[];
+};
+
+export type GpStatsStaleItem = {
+  serial: string;
+  productName: string;
+  metalType: GpMetalType;
+  purityCode: string;
+  weightG: number | null;
+  pureGram: number | null;
+  acquiredCost: number | null;
+  receivedAt: string | null;
+  daysInStock: number;
+};
+
+export type GpStatsStaleResponse = {
+  days: number;
+  items: GpStatsStaleItem[];
+  subtotals: {
+    metalType: GpMetalType;
+    purityCode: string;
+    count: number;
+    pureGramSum: number;
+    costSum: number;
+  }[];
+};
+
 // ── 2차(§8) — 카다로그·거래처·판매 내역·반품·재고조사 통계 ─────────────
 
 export type GpSupplierType = "PURCHASE" | "REFERRER" | "ETC";
@@ -168,6 +234,12 @@ export type GpCatalogProduct = {
   defaultTagPrice: number | null;
   supplierId: string | null;
   supplierName: string | null;
+  mainStoneId: string | null;
+  mainStoneName: string | null;
+  mainStoneFee: number | null;
+  subStoneId: string | null;
+  subStoneName: string | null;
+  subStoneFee: number | null;
   imageKey: string | null;
   imageUrl: string | null;
   memo: string | null;

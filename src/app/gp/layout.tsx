@@ -43,11 +43,18 @@ const GP_TREE: TreeGroup[] = [
   },
   {
     label: "카다로그",
-    children: [{ href: "/gp/catalog", label: "모델 관리" }],
+    children: [
+      { href: "/gp/catalog", label: "모델 관리" },
+      { href: "/gp/stones", label: "스톤 관리" },
+    ],
   },
   {
     label: "거래처관리",
     children: [{ href: "/gp/suppliers", label: "거래처" }],
+  },
+  {
+    label: "통계",
+    children: [{ href: "/gp/stats", label: "판매·재고 통계" }],
   },
   {
     label: "기초관리",
