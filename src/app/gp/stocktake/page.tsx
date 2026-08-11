@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
-import { gram, kstDateTime, type GpItem, type GpItemListResponse } from "@/lib/gp";
+import {
+  GP_METAL_LABEL,
+  gram,
+  krw,
+  kstDateTime,
+  type GpItem,
+  type GpItemListResponse,
+  type GpStocktakeMaterialStat,
+} from "@/lib/gp";
 
 type StLine = {
   gpItemId: string | null;
@@ -23,6 +31,8 @@ type Stocktake = {
   missingCount: number;
   unexpectedCount: number;
   lines: StLine[];
+  uninspectedStats: GpStocktakeMaterialStat[];
+  inspectedStats: GpStocktakeMaterialStat[];
 };
 type StSummary = {
   id: string;
@@ -241,7 +251,13 @@ export default function GpStocktakePage() {
         {error ? <div className="text-red-600 mb-3">{error}</div> : null}
 
         {active ? (
-          <div className="flex flex-col gap-4 max-w-3xl">
+          <div className="flex flex-col gap-4 max-w-5xl">
+            {/* 재질별 통계 2표(§8.0 #4) — 골드펜 「조사하지 않은/조사한 재고 재질별 통계」 */}
+            <section className="grid grid-cols-2 gap-3">
+              <MaterialStatTable title="조사하지 않은 재고 — 재질별" rows={active.uninspectedStats} />
+              <MaterialStatTable title="조사한 재고 — 재질별" rows={active.inspectedStats} />
+            </section>
+
             <section>
               <h2 className="text-[13px] font-extrabold mb-1">
                 아직 스캔 안 됨 <span className="tabular-nums text-caption">{missing.length}</span>
@@ -414,6 +430,70 @@ export default function GpStocktakePage() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** 재질(순도)별 통계 표 — 수량·중량·순중량·매입가 합. 골드펜 통계 2표의 한 쪽. */
+function MaterialStatTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: GpStocktakeMaterialStat[];
+}) {
+  const th = "px-2 py-1 text-left font-bold text-[12px] text-caption whitespace-nowrap";
+  const td = "px-2 py-1 whitespace-nowrap text-[12px]";
+  const total = rows.reduce(
+    (acc, r) => ({
+      count: acc.count + r.count,
+      weightSum: Number((acc.weightSum + r.weightSum).toFixed(3)),
+      pureGramSum: Number((acc.pureGramSum + r.pureGramSum).toFixed(3)),
+      costSum: acc.costSum + r.costSum,
+    }),
+    { count: 0, weightSum: 0, pureGramSum: 0, costSum: 0 },
+  );
+  return (
+    <div className="rounded-lg border border-line overflow-hidden">
+      <div className="px-2 py-1.5 text-[12px] font-extrabold border-b border-line bg-surface">
+        {title}
+      </div>
+      {rows.length === 0 ? (
+        <div className="p-3 text-center text-caption text-[12px]">해당 없음</div>
+      ) : (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-line/70">
+              <th className={th}>재질</th>
+              <th className={`${th} text-right`}>수량</th>
+              <th className={`${th} text-right`}>중량(g)</th>
+              <th className={`${th} text-right`}>순중량(g)</th>
+              <th className={`${th} text-right`}>매입가 합</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.metalType}:${r.purityCode}`} className="border-b border-line/50">
+                <td className={`${td} font-semibold`}>
+                  {GP_METAL_LABEL[r.metalType]}{" "}
+                  {r.purityCode === "UNKNOWN" ? "미상" : r.purityCode}
+                </td>
+                <td className={`${td} text-right tabular-nums`}>{r.count}</td>
+                <td className={`${td} text-right tabular-nums`}>{gram(r.weightSum)}</td>
+                <td className={`${td} text-right tabular-nums`}>{gram(r.pureGramSum)}</td>
+                <td className={`${td} text-right tabular-nums`}>{krw(r.costSum)}</td>
+              </tr>
+            ))}
+            <tr className="bg-surface font-bold">
+              <td className={td}>합계</td>
+              <td className={`${td} text-right tabular-nums`}>{total.count}</td>
+              <td className={`${td} text-right tabular-nums`}>{gram(total.weightSum)}</td>
+              <td className={`${td} text-right tabular-nums`}>{gram(total.pureGramSum)}</td>
+              <td className={`${td} text-right tabular-nums`}>{krw(total.costSum)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

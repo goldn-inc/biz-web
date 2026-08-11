@@ -81,7 +81,8 @@ export default function GpSalesNewPage() {
               name: item.productName,
               pureGram: item.pureGram,
               acquiredLaborFee: item.acquiredLaborFee,
-              salePrice: "",
+              // §8.4 — 모델의 소비자가(TAG가)가 있으면 판매가 프리필(수정 가능)
+              salePrice: item.tagPrice != null ? String(item.tagPrice) : "",
             },
           ];
         });

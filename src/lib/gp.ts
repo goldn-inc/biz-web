@@ -68,6 +68,8 @@ export type GpItem = {
   pureGram: number | null;
   acquiredUnitCost: number | null;
   acquiredLaborFee: number | null;
+  /** 모델의 소비자가(TAG가, §8.4) — 판매가 프리필. */
+  tagPrice: number | null;
   supplierName: string | null;
   source: GpItemSource;
   status: GpItemStatus;
@@ -124,6 +126,127 @@ export type GpSupplier = {
   type: "PURCHASE" | "REFERRER" | "ETC";
 };
 
+// ── 2차(§8) — 카다로그·거래처·판매 내역·반품·재고조사 통계 ─────────────
+
+export type GpSupplierType = "PURCHASE" | "REFERRER" | "ETC";
+
+export const GP_SUPPLIER_TYPE_LABEL: Record<GpSupplierType, string> = {
+  PURCHASE: "매입처",
+  REFERRER: "소개처",
+  ETC: "기타",
+};
+
+/** 거래처 전체 행(§8.6) — 골드펜 등록 폼에서 추린 실무 필드. */
+export type GpSupplierRow = {
+  id: string;
+  name: string;
+  type: GpSupplierType;
+  phone: string | null;
+  fax: string | null;
+  email: string | null;
+  address: string | null;
+  businessName: string | null;
+  businessNo: string | null;
+  ceoName: string | null;
+  managerName: string | null;
+  managerPhone: string | null;
+  hallmarkFactor: number | null;
+  orderLeadDays: number | null;
+  memo: string | null;
+  isActive: boolean;
+};
+
+/** 카다로그 목록 행(§8.4) — 카드 그리드의 축. */
+export type GpCatalogProduct = {
+  id: string;
+  name: string;
+  category: GpCategory;
+  metalType: GpMetalType;
+  purityCode: string;
+  defaultWeightGram: number | null;
+  defaultLaborFeeKrw: number | null;
+  defaultTagPrice: number | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  imageKey: string | null;
+  imageUrl: string | null;
+  memo: string | null;
+  isActive: boolean;
+  inStockCount: number;
+};
+
+export type GpCatalogProductDetail = GpCatalogProduct & {
+  rentedCount: number;
+  soldCount: number;
+  totalItemCount: number;
+  createdAt: string;
+};
+
+export type GpSaleLine = {
+  id: string;
+  gpItemId: string | null;
+  serial: string | null;
+  name: string;
+  pureGram: number | null;
+  salePrice: number;
+  metalType: GpMetalType | null;
+  purityCode: string | null;
+  weightG: number | null;
+  acquiredCost: number | null;
+  returned: boolean;
+};
+
+export type GpSaleReturn = {
+  id: string;
+  returnedAt: string;
+  refundCash: number;
+  refundTransfer: number;
+  refundCard: number;
+  memo: string | null;
+};
+
+export type GpSale = {
+  id: string;
+  saleNo: number;
+  soldAt: string;
+  status: "COMPLETED" | "CANCELED";
+  totalAmount: number;
+  cashAmount: number;
+  transferAmount: number;
+  cardAmount: number;
+  buyerMemo: string | null;
+  memo: string | null;
+  lines: GpSaleLine[];
+  returns: GpSaleReturn[];
+};
+
+/** 기간 합계(§8.2) — COMPLETED 기준, 반품 라인 제외, 결제 합은 환불 차감 후. */
+export type GpSalesPeriodSummary = {
+  count: number;
+  lineCount: number;
+  salesTotal: number;
+  cashTotal: number;
+  transferTotal: number;
+  cardTotal: number;
+  costTotal: number;
+  marginTotal: number;
+};
+
+export type GpSaleListResponse = {
+  sales: GpSale[];
+  summary: GpSalesPeriodSummary;
+};
+
+/** 재질(순도)별 통계 한 줄 — 골드펜 재고조사 통계 2표 대응(§8.0 #4). */
+export type GpStocktakeMaterialStat = {
+  metalType: GpMetalType;
+  purityCode: string;
+  count: number;
+  weightSum: number;
+  pureGramSum: number;
+  costSum: number;
+};
+
 export const GP_EVENT_LABEL: Record<string, string> = {
   RECEIVED: "도매 입고",
   DIRECT_REGISTERED: "직접등록",
@@ -134,6 +257,8 @@ export const GP_EVENT_LABEL: Record<string, string> = {
   ADJUSTED_OUT: "조정출고",
   READJUSTED_IN: "재발견 입고",
   VOIDED: "무효처리",
+  UPDATED: "정보 수정",
+  LABEL_QUEUED: "라벨 인쇄",
 };
 
 export const GP_CASH_TYPE_LABEL: Record<string, string> = {

@@ -64,6 +64,13 @@ export default function GpInventoryPage() {
   const [suppliers, setSuppliers] = useState<GpSupplier[]>([]);
   const [products, setProducts] = useState<GpProductLite[]>([]);
   const [registerOpen, setRegisterOpen] = useState(false);
+  /** 카다로그 「이 모델로 직접등록」(§8.4) — ?register=<gpProductId> 로 진입하면 프리셀렉트 오픈. */
+  const [urlRegisterProductId, setUrlRegisterProductId] = useState<string | null>(null);
+  const pendingRegisterRef = useRef<string | null>(
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("register"),
+  );
   const [detail, setDetail] = useState<{ serial: string; data?: GpItemDetail; error?: string } | null>(
     null,
   );
@@ -132,7 +139,15 @@ export default function GpInventoryPage() {
       .then((r) => setSuppliers(r.suppliers))
       .catch(() => setSuppliers([]));
     void bizApiFetch<{ products: GpProductLite[] }>("/biz/gp/products", { token })
-      .then((r) => setProducts(r.products))
+      .then((r) => {
+        setProducts(r.products);
+        // URL 프리셀렉트는 모델 목록이 온 뒤에 열어야 프리필이 성립한다(§8.4)
+        if (pendingRegisterRef.current) {
+          setUrlRegisterProductId(pendingRegisterRef.current);
+          pendingRegisterRef.current = null;
+          setRegisterOpen(true);
+        }
+      })
       .catch(() => setProducts([]));
   }, [token]);
   useEffect(loadFormData, [loadFormData]);
@@ -232,6 +247,7 @@ export default function GpInventoryPage() {
             "실중량(g)",
             "순중량(g)",
             "매입공임",
+            "소비자가(TAG)",
             "입고처",
             "입고일",
             "상태",
@@ -246,6 +262,7 @@ export default function GpInventoryPage() {
               r.weightG ?? "",
               r.pureGram ?? "",
               r.acquiredLaborFee ?? "",
+              r.tagPrice ?? "",
               esc(r.supplierName),
               kstDate(r.receivedAt),
               GP_STATUS_LABEL[r.status],
@@ -418,6 +435,7 @@ export default function GpInventoryPage() {
                   <th className={thNum}>실중량(g)</th>
                   <th className={thNum}>순중량(g)</th>
                   <th className={thNum}>매입공임</th>
+                  <th className={thNum}>소비자가(TAG)</th>
                   <th className={th}>입고처</th>
                   <th className={th}>입고일</th>
                   <th className={th}>상태</th>
@@ -468,6 +486,7 @@ export default function GpInventoryPage() {
                       <td className={tdNum}>{gram(r.weightG)}</td>
                       <td className={tdNum}>{gram(r.pureGram)}</td>
                       <td className={tdNum}>{krw(r.acquiredLaborFee)}</td>
+                      <td className={`${tdNum} font-semibold text-red-600`}>{krw(r.tagPrice)}</td>
                       <td className={td}>{r.supplierName ?? (r.source === "WHOLESALE" ? "본사(도매)" : "—")}</td>
                       <td className={td}>{kstDate(r.receivedAt)}</td>
                       <td className={td}>
@@ -517,9 +536,14 @@ export default function GpInventoryPage() {
           token={token}
           products={products}
           suppliers={suppliers}
-          onClose={() => setRegisterOpen(false)}
+          initialProductId={urlRegisterProductId ?? undefined}
+          onClose={() => {
+            setRegisterOpen(false);
+            setUrlRegisterProductId(null);
+          }}
           onRegistered={(item) => {
             setRegisterOpen(false);
+            setUrlRegisterProductId(null);
             setHighlightSerial(item.serial);
             loadFormData();
             refresh();
@@ -535,9 +559,18 @@ export default function GpInventoryPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-extrabold text-[14px] font-mono">{detail.serial}</h2>
-              <button type="button" onClick={() => setDetail(null)} className="text-caption hover:text-ink px-1">
-                ✕ <span className="text-[11px]">Esc</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/gp/inventory/${encodeURIComponent(detail.serial)}`}
+                  className="text-[12px] text-primary font-semibold hover:underline"
+                  title="액션(라벨·대여·수정·VOID)과 전체 이력은 상세 페이지에서"
+                >
+                  전체 상세 →
+                </a>
+                <button type="button" onClick={() => setDetail(null)} className="text-caption hover:text-ink px-1">
+                  ✕ <span className="text-[11px]">Esc</span>
+                </button>
+              </div>
             </div>
             {detail.error ? (
               <div className="text-red-600">{detail.error}</div>

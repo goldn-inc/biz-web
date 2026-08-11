@@ -20,6 +20,8 @@ type Props = {
   token: string;
   products: GpProductLite[];
   suppliers: GpSupplier[];
+  /** 카다로그 「이 모델로 직접등록」(§8.4) — 모델 프리셀렉트. */
+  initialProductId?: string;
   onClose: () => void;
   /** 등록 성공 — 목록 재조회 + 새 시리얼 하이라이트용. */
   onRegistered: (item: GpItem) => void;
@@ -29,9 +31,21 @@ type Props = {
  * 직접등록 모달 — 비도매 물건(자투리 매입·기존 보유분)을 매장 재고로 올린다.
  * 모델·입고처는 인라인 생성 가능(gp-design.md §5.2 직접 입고).
  */
-export function DirectRegisterModal({ token, products, suppliers, onClose, onRegistered }: Props) {
-  const [mode, setMode] = useState<"existing" | "new">(products.length > 0 ? "existing" : "new");
-  const [gpProductId, setGpProductId] = useState(products[0]?.id ?? "");
+export function DirectRegisterModal({
+  token,
+  products,
+  suppliers,
+  initialProductId,
+  onClose,
+  onRegistered,
+}: Props) {
+  const initialProduct = initialProductId
+    ? products.find((p) => p.id === initialProductId)
+    : undefined;
+  const [mode, setMode] = useState<"existing" | "new">(
+    initialProduct || products.length > 0 ? "existing" : "new",
+  );
+  const [gpProductId, setGpProductId] = useState(initialProduct?.id ?? products[0]?.id ?? "");
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState<GpCategory>("RING");
   const [metal, setMetal] = useState<GpMetalType>("GOLD");

@@ -27,7 +27,7 @@ const GP_TREE: TreeGroup[] = [
     label: "판매관리",
     children: [
       { href: "/gp/sales/new", label: "판매 등록" },
-      { href: "/gp/sales", label: "판매 내역", planned: true },
+      { href: "/gp/sales", label: "판매 내역" },
     ],
   },
   {
@@ -43,11 +43,11 @@ const GP_TREE: TreeGroup[] = [
   },
   {
     label: "카다로그",
-    children: [{ href: "/gp/catalog", label: "모델 관리", planned: true }],
+    children: [{ href: "/gp/catalog", label: "모델 관리" }],
   },
   {
     label: "거래처관리",
-    children: [{ href: "/gp/suppliers", label: "거래처", planned: true }],
+    children: [{ href: "/gp/suppliers", label: "거래처" }],
   },
   {
     label: "기초관리",
@@ -58,6 +58,12 @@ const GP_TREE: TreeGroup[] = [
 function GpShell({ children }: { children: React.ReactNode }) {
   const { account, logout } = useBizSession();
   const pathname = usePathname();
+
+  /** 가장 긴 prefix 가 이긴다 — /gp/sales/new 에서 「판매 등록」만 활성(「판매 내역」 오점등 방지). */
+  const activeHref = GP_TREE.flatMap((g) => g.children)
+    .filter((l) => !l.external && !l.planned)
+    .filter((l) => pathname === l.href || pathname.startsWith(`${l.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
     <div className="h-screen flex flex-col bg-white text-ink text-[13px]">
@@ -94,7 +100,7 @@ function GpShell({ children }: { children: React.ReactNode }) {
                 {group.label}
               </div>
               {group.children.map((leaf) => {
-                const active = !leaf.external && pathname.startsWith(leaf.href);
+                const active = !leaf.external && leaf.href === activeHref;
                 if (leaf.planned) {
                   return (
                     <div
