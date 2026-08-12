@@ -72,8 +72,6 @@ export default function OnboardingPage() {
   const router = useRouter();
   const reduced = Boolean(useReducedMotion());
   const [index, setIndex] = useState(0);
-  // 로그인하기 클릭 → 주황 원이 화면을 덮는 슈루룩 전환 후 /login 으로
-  const [leaving, setLeaving] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
   const isLast = index === N - 1;
 
@@ -82,12 +80,8 @@ export default function OnboardingPage() {
   }, []);
 
   const goLogin = useCallback(() => {
-    if (reduced) {
-      router.push("/login?from=onboarding");
-      return;
-    }
-    setLeaving(true);
-  }, [reduced, router]);
+    router.push("/login");
+  }, [router]);
 
   /** 끌어놓은 거리와 속도로 넘길지 되돌릴지 정한다. 어느 쪽도 아니면 제자리로 튕겨 돌아온다. */
   const onDragEnd = (_event: unknown, info: PanInfo) => {
@@ -101,20 +95,8 @@ export default function OnboardingPage() {
     <div
       id="onboarding"
       className="relative isolate min-h-screen flex flex-col select-none overflow-hidden"
-      style={leaving ? { pointerEvents: "none" } : undefined}
     >
       <FloatingBackdrop />
-
-      {/* 슈루룩 전환 — 주황 원이 아래에서 화면 전체를 덮은 뒤 /login 으로 */}
-      {leaving && (
-        <motion.div
-          className="fixed left-1/2 bottom-24 z-50 h-24 w-24 -translate-x-1/2 rounded-full bg-primary"
-          initial={{ scale: 0 }}
-          animate={{ scale: 40 }}
-          transition={{ duration: 0.5, ease: [0.7, 0, 0.84, 0] }}
-          onAnimationComplete={() => router.push("/login?from=onboarding")}
-        />
-      )}
 
       <header className="flex items-center justify-between px-5 py-4 md:px-9 md:py-6">
         <div className="flex items-center gap-2.5">

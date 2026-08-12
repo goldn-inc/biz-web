@@ -3,9 +3,8 @@ import type { TargetAndTransition, Transition, Variants } from "motion/react";
 /**
  * biz-web 모션 토큰.
  *
- * 지금까지 모션 값이 세 군데에 흩어져 있었다 — PageWipe 의 하드코딩 이징,
- * globals.css 의 `.page-stagger`·온보딩 keyframe, 그리고 컴포넌트별 즉흥값.
- * 값을 여기로 모아 화면들이 같은 결을 참조하게 한다.
+ * 값이 컴포넌트마다 즉흥적으로 흩어지지 않도록 여기 모아 두고 화면들이 같은 결을 참조하게 한다.
+ * 페이지 이동 전환은 없앴으므로(2026-08-12) 여기 남은 값은 화면 안에서 도는 것들뿐이다.
  *
  * 성능 규약: 여기 정의된 프리셋은 transform(x·y·scale)과 opacity 만 건드린다.
  * width·height·top 처럼 레이아웃을 다시 계산시키는 속성은 넣지 않는다.
@@ -13,10 +12,8 @@ import type { TargetAndTransition, Transition, Variants } from "motion/react";
 
 /** 이징 — 기존 구현에서 쓰던 값에 이름을 붙인 것. 새 값을 만들지 않았다. */
 export const EASE = {
-  /** 진입·정착. `.page-stagger` 와 온보딩 `anim-up` 이 쓰던 값 */
+  /** 진입·정착 */
   out: [0.16, 1, 0.3, 1],
-  /** 화면을 덮고 걷는 큰 전환. PageWipe 커튼이 쓰던 expo in-out */
-  inOut: [0.83, 0, 0.17, 1],
   /** 살짝 튀는 강조. 온보딩 `anim-pop` 이 쓰던 back-out */
   overshoot: [0.34, 1.56, 0.64, 1],
 } as const;
@@ -27,10 +24,8 @@ export const DUR = {
   feedback: 0.14,
   /** 카드·행 진입 */
   enter: 0.32,
-  /** 페이지 섹션 촤라락(현행 `.page-stagger` 와 동일) */
+  /** 목록·섹션이 순차로 떠오르는 진입 */
   section: 0.5,
-  /** 커튼 전환 */
-  curtain: 0.42,
 } as const;
 
 /** 스태거 간격(초)과 상한. 상한이 없으면 긴 목록의 마지막 행이 몇 초 뒤에 뜬다. */
@@ -58,8 +53,7 @@ export function staggerDelay(index: number, gap: number = STAGGER.base): number 
 /**
  * 진입 — 목록·그리드가 순차로 떠오르는 결.
  *
- * 값은 `.page-stagger`(섹션 촤라락)와 같다. 섹션이 이 리듬으로 뜨고 그 안의 행이
- * 같은 리듬으로 이어져야 화면이 하나로 읽힌다. 부모에 `container`, 각 항목에 `item` 을 준다.
+ * 부모에 `container`, 각 항목에 `item` 을 준다.
  *
  * 주의 — 항목이 많은 목록은 `staggerChildren` 만으로는 마지막 행이 한참 뒤에 뜬다.
  * 그런 곳은 `custom` + `staggerDelay()` 로 지연 상한을 걸어야 한다.

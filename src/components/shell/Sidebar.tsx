@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { SIDEBAR_NAV } from "@/lib/nav";
 import { BizTier, isWholesaleTier, tierLabel } from "@/lib/session";
-import { usePageWipe } from "./PageWipe";
 
 type SidebarProps = {
   storeName: string;
@@ -16,7 +15,6 @@ type SidebarProps = {
 export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
   const pathname = usePathname();
   const reduced = Boolean(useReducedMotion());
-  const { navigate } = usePageWipe();
   const items = SIDEBAR_NAV.filter((item) => !item.tierOnly || isWholesaleTier(tier));
   // 활성 항목 하이라이트가 메뉴 사이를 미끄러져 이동 — reduced-motion이면 즉시 전환
   const pill: Transition = reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 40 };
@@ -48,11 +46,6 @@ export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
           >
           <Link
             href={item.href}
-            onClick={(e) => {
-              // 주황 커튼 전환이 라우팅을 대신 수행한다
-              e.preventDefault();
-              navigate(item.href);
-            }}
             className={`group relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-colors ${
               active ? "text-primary font-bold" : "text-body font-medium hover:bg-slate-100"
             }`}
@@ -92,10 +85,6 @@ export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
         {/* 사이드바에는 「더보기」가 없어 매장 정보 진입점이 이 카드다(탭바 쪽은 /more 목록). */}
         <Link
           href="/store-info"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate("/store-info");
-          }}
           className="flex items-center gap-3 min-w-0 flex-1 rounded-xl px-1 py-1 -mx-1 hover:bg-slate-100 transition-colors"
         >
           <div className="w-9 h-9 rounded-full bg-slate-100 border border-line grid place-items-center text-sm font-bold text-body shrink-0">

@@ -18,21 +18,9 @@
     "Noto Sans KR", "Malgun Gothic", sans-serif;
 }
 
-/* ─── 모션 토큰 — src/lib/motion.ts 의 거울. 한쪽만 바꾸지 말 것 ───
-   CSS 애니메이션(진입 keyframe)과 JS motion(상태·제스처)이 같은 값을 쓰게 하기 위한 것.
-   단순 진입은 컴포지터에서 도는 CSS 로, 상태가 개입하는 건 motion 으로 나눠 쓴다. */
-:root {
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.83, 0, 0.17, 1);
-  --ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  --dur-feedback: 140ms;
-  --dur-enter: 320ms;
-  --dur-section: 500ms;
-  --dur-curtain: 420ms;
-
-  --stagger-base: 60ms;
-}
+/* 모션 토큰 CSS 거울(--ease-*·--dur-*·--stagger-base)은 제거했다 — 마지막 사용처였던
+   `.page-stagger` 가 사라지면서 CSS 쪽 애니메이션이 하나도 남지 않았다. 값이 필요하면
+   src/lib/motion.ts 의 JS 토큰을 쓴다. */
 
 html,
 body {
@@ -204,36 +192,5 @@ button {
     @apply font-sans;
   }
 }
-/* ─── 메뉴(페이지) 진입 촤라락 — ShellFrame 본문 래퍼(.page-stagger)의 직계 섹션이 순차 등장 ─── */
-@keyframes page-rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-}
-
-/* fill-mode 는 `both` 가 아니라 **`backwards`** 다. 필요한 건 지연 구간 동안 시작
-   상태를 붙잡아 두는 것뿐인데, `both`(=backwards+forwards)를 쓰면 애니메이션이 끝난
-   뒤에도 `transform: matrix(1,0,0,1,0,0)` 가 계속 남는다. `none` 이 아닌 transform 은
-   항등행렬이어도 그것만으로 containing block 을 만들어서, 이 안에서 열리는 오버레이의
-   `position: fixed` 가 뷰포트 대신 이 요소를 기준으로 잡힌다(admin-web 에서 실측).
-
-   `:not(.fixed)` — 오버레이는 열릴 때 새 형제로 추가되므로 애니메이션이 그 시점에
-   다시 돈다. 도는 동안 transform 이 걸리므로 대상에서 뺀다. */
-.page-stagger > *:not(.fixed) {
-  animation: page-rise var(--dur-section) var(--ease-out) backwards;
-}
-
-/* 6번째부터는 지연을 더 늘리지 않는다 — 섹션이 많은 화면에서 마지막이 늦게 뜨는 걸 막는 상한.
-   JS 쪽 STAGGER.maxIndex 와 같은 취지다. */
-.page-stagger > *:nth-child(2) { animation-delay: calc(var(--stagger-base) * 1); }
-.page-stagger > *:nth-child(3) { animation-delay: calc(var(--stagger-base) * 2); }
-.page-stagger > *:nth-child(4) { animation-delay: calc(var(--stagger-base) * 3); }
-.page-stagger > *:nth-child(5) { animation-delay: calc(var(--stagger-base) * 4); }
-.page-stagger > *:nth-child(n + 6) { animation-delay: calc(var(--stagger-base) * 5); }
-
-@media (prefers-reduced-motion: reduce) {
-  .page-stagger > * {
-    animation: none;
-  }
-}
+/* 메뉴(페이지) 진입 촤라락(`page-rise`·`.page-stagger`)은 제거했다 —
+   페이지 이동에 전환 연출을 두지 않기로 했다(2026-08-12). 누르면 바로 바뀐다. */

@@ -6,7 +6,6 @@ import { motion, useReducedMotion, type Transition } from "motion/react";
 import { ComponentType, SVGProps } from "react";
 import { TABBAR_NAV } from "@/lib/nav";
 import { MoreIcon } from "@/components/icons";
-import { usePageWipe } from "./PageWipe";
 
 /** 탭 1개 — 활성 시 상단 인디케이터(layoutId 슬라이드) + 아이콘 스프링 팝. */
 function TabItem({
@@ -22,15 +21,9 @@ function TabItem({
   active: boolean;
   spring: Transition;
 }) {
-  const { navigate } = usePageWipe();
   return (
     <Link
       href={href}
-      onClick={(e) => {
-        // 주황 커튼 전환이 라우팅을 대신 수행한다
-        e.preventDefault();
-        navigate(href);
-      }}
       className={`relative flex-1 flex flex-col items-center gap-1 py-1.5 ${
         active ? "text-primary" : "text-caption"
       }`}

@@ -1,28 +1,11 @@
 "use client";
 
-import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import { isWholesaleTier, saveBizSession, type BizAccount } from "@/lib/session";
 import { FloatingBackdrop } from "@/components/FloatingBackdrop";
-
-/** 온보딩 슈루룩 전환의 후반부 — 주황 오버레이가 걷히며 로그인 화면이 드러난다. */
-function ArrivalSweep() {
-  const params = useSearchParams();
-  const reduced = Boolean(useReducedMotion());
-  const [done, setDone] = useState(false);
-  if (params.get("from") !== "onboarding" || done || reduced) return null;
-  return (
-    <motion.div
-      className="pointer-events-none fixed inset-0 z-50 bg-primary"
-      initial={{ opacity: 1 }}
-      animate={{ opacity: 0 }}
-      transition={{ duration: 0.55, ease: "easeOut", delay: 0.05 }}
-      onAnimationComplete={() => setDone(true)}
-    />
-  );
-}
 
 type ErrorType = null | "mismatch" | "disabled";
 
@@ -52,8 +35,6 @@ function LoginInner() {
   const [errorType, setErrorType] = useState<ErrorType>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // 로그인 성공 → 주황 원이 화면을 덮는 슈루룩 전환 후 목적지로
-  const [leavingTo, setLeavingTo] = useState<string | null>(null);
   // 로그인 실패 시 폼 카드 shake
   const shake = useAnimationControls();
 
@@ -61,7 +42,7 @@ function LoginInner() {
   // 입력은 제출 중에만 잠근다 — 403 후에도 다른 계정으로 재시도할 수 있어야 한다.
   const disabled = submitting;
 
-  // 전환 애니메이션이 끝났을 때와 안전망 타이머, 두 곳에서 부르므로 한 번만 이동하게 잠근다.
+  // 제출이 겹쳐 들어와도 이동은 한 번만 — 세션 저장 뒤 두 번 밀어 넣지 않는다.
   const navigatedRef = useRef(false);
 
   /**
@@ -76,19 +57,6 @@ function LoginInner() {
     },
     [router],
   );
-
-  /**
-   * 이동을 애니메이션 완료 콜백에만 맡기지 않기 위한 안전망.
-   *
-   * 세션은 이미 저장된 뒤라, `onAnimationComplete` 가 오지 않으면 **로그인에 성공하고도
-   * 로그인 화면에 머문다.** 그 사이 카드에는 pointerEvents:none 이 걸려 있어 다시 눌러볼 수도
-   * 없다. 애니메이션은 0.38s 라 그보다 넉넉히 잡아두고, 콜백이 제때 오면 이 타이머는 무의미해진다.
-   */
-  useEffect(() => {
-    if (!leavingTo) return;
-    const timer = setTimeout(() => navigateOnce(leavingTo), 900);
-    return () => clearTimeout(timer);
-  }, [leavingTo, navigateOnce]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -108,13 +76,7 @@ function LoginInner() {
       const target = result.account.mustChangePassword
         ? "/change-password"
         : (nextPath ?? (isWholesaleTier(result.account.tier) ? "/wholesale" : "/dashboard"));
-      if (reduced) {
-        navigateOnce(target);
-      } else {
-        // 도착 화면(셸)이 SweepReveal 로 오버레이를 걷어낸다
-        if (target !== "/change-password") sessionStorage.setItem("biz-sweep-arrive", "1");
-        setLeavingTo(target);
-      }
+      navigateOnce(target);
     } catch (error) {
       if (!reduced) {
         void shake.start({
@@ -137,21 +99,9 @@ function LoginInner() {
   };
 
   return (
-    <section
-      className="relative isolate min-h-screen grid place-items-center overflow-hidden px-5 py-12"
-      style={leavingTo ? { pointerEvents: "none" } : undefined}
-    >
+    <section className="relative isolate min-h-screen grid place-items-center overflow-hidden px-5 py-12">
       <FloatingBackdrop />
-      <ArrivalSweep />
-      {/* 로그인 성공 — 카드가 오른쪽으로 샥 빠지고, 메인(셸)이 왼쪽에서 샥 들어온다 */}
-      <motion.div
-        className="w-full max-w-md flex flex-col gap-8"
-        animate={leavingTo ? { x: "70vw", opacity: 0 } : undefined}
-        transition={{ duration: 0.38, ease: [0.7, 0, 0.84, 0] }}
-        onAnimationComplete={() => {
-          if (leavingTo) navigateOnce(leavingTo);
-        }}
-      >
+      <div className="w-full max-w-md flex flex-col gap-8">
         <div className="flex flex-col items-center gap-3 text-center">
           <motion.div
             className="w-12 h-12 rounded-2xl bg-primary grid place-items-center text-white text-xl font-extrabold shadow-lg shadow-primary/25"
@@ -299,7 +249,7 @@ function LoginInner() {
         >
           계정이 없다면 금은마켓 파트너 담당자를 통해 발급받을 수 있습니다.
         </motion.p>
-      </motion.div>
+      </div>
     </section>
   );
 }
