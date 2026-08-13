@@ -94,7 +94,17 @@ function LoginInner() {
         );
       }
     } finally {
-      setSubmitting(false);
+      /**
+       * 이동이 시작됐으면 잠금을 **풀지 않는다.**
+       *
+       * `router.replace` 는 App Router 트랜지션이라 즉시 언마운트되지 않는다 — 도착 세그먼트가
+       * 해결될 때까지 이 로그인 폼은 그대로 마운트·클릭 가능한 상태로 남는다. 여기서 submitting 을
+       * false 로 되돌리면 그 사이 버튼 라벨이 「로그인」으로 복귀하고 재진입 가드(위 `if (submitting)`)
+       * 까지 풀려, 사용자가 먹통인 줄 알고 한 번 더 누르면 `POST /biz/auth/login` 이 두 번 나간다.
+       * 종전엔 전환 애니메이션이 이 구간을 `pointerEvents:none` 으로 덮고 있었는데, 전환을 걷어내면서
+       * (e4479e5) 대체 가드 없이 열렸다. 애니메이션을 되살리지 않고 잠금만 유지한다.
+       */
+      if (!navigatedRef.current) setSubmitting(false);
     }
   };
 
