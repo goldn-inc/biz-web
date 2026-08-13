@@ -105,7 +105,64 @@ export type GpInventorySummary = {
 export type GpItemListResponse = {
   items: GpItem[];
   groups: GpItemGroup[];
+  /** 필터에 걸린 전체 개체 수 — 페이지 크기와 무관. */
+  total: number;
+  hasMore: boolean;
   summary: GpInventorySummary;
+};
+
+// ── 초기 재고 이관(CSV) ────────────────────────────────────────────
+
+export type GpImportRowError = {
+  /** CSV 행 번호(헤더=1) — 엑셀 행 번호와 같아서 매장이 바로 찾아간다. */
+  line: number;
+  column: string;
+  message: string;
+};
+
+export type GpImportRowPreview = {
+  line: number;
+  productName: string;
+  category: GpCategory;
+  metalType: GpMetalType;
+  purityCode: string;
+  weightG: number | null;
+  pureGram: number | null;
+  acquiredUnitCost: number | null;
+  tagPrice: number | null;
+  supplierName: string | null;
+  externalBarcode: string | null;
+};
+
+export type GpImportSummary = {
+  newProducts: number;
+  newSuppliers: number;
+  goldPureGram: number;
+  silverPureGram: number;
+  unconvertibleCount: number;
+  acquiredCostTotal: number;
+};
+
+export type GpImportResult = {
+  fileName: string;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  errors: GpImportRowError[];
+  preview: GpImportRowPreview[];
+  summary: GpImportSummary;
+  notices: string[];
+  committed: boolean;
+  importId: string | null;
+  reportUrl: string | null;
+};
+
+export type GpImportHistoryRow = {
+  id: string;
+  fileName: string;
+  totalRows: number;
+  createdItems: number;
+  createdAt: string;
 };
 
 export type GpItemEvent = {

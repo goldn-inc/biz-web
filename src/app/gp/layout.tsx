@@ -58,7 +58,10 @@ const GP_TREE: TreeGroup[] = [
   },
   {
     label: "기초관리",
-    children: [{ href: "/gp/settings", label: "개시 잔액" }],
+    children: [
+      { href: "/gp/settings", label: "개시 잔액" },
+      { href: "/gp/import", label: "초기 재고 이관" },
+    ],
   },
 ];
 

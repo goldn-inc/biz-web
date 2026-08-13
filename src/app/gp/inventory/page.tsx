@@ -39,6 +39,9 @@ const STATUS_OPTIONS: (GpItemStatus | "ALL")[] = [
 /** 드롭다운 공통 스타일 — 조회줄(흰 헤더, 세로선 없음)의 부품. */
 const dd = "h-8 px-2 rounded-md border border-line bg-white text-[13px]";
 
+/** 한 번에 받는 개체 수 — 서버 기본값과 같게 둔다(백엔드 DEFAULT_ITEM_PAGE_SIZE). */
+const PAGE_SIZE = 200;
+
 /**
  * GP 재고 목록(§5.1 — 확정 시안 그대로).
  * 조회줄 드롭다운 5 + 검색 + 모델 묶어보기 토글, 격자는 가로선만,
@@ -56,6 +59,15 @@ export default function GpInventoryPage() {
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [groupByModel, setGroupByModel] = useState(false);
+  /**
+   * 개체는 판매돼도 SOLD 로 남아 계속 쌓인다 — 「전체」 조회는 재고 수백 개인 매장에서도
+   * 몇 년이면 만 단위가 된다. 서버 기본 200행을 받고 「더 보기」로 늘린다.
+   * 선택 행과 같은 key 파생 방식 — 필터가 바뀌면 늘려둔 크기가 저절로 원위치한다.
+   */
+  const [limitState, setLimitState] = useState<{ key: string; value: number }>({
+    key: "",
+    value: PAGE_SIZE,
+  });
 
   const [reloadCount, setReloadCount] = useState(0);
   const [result, setResult] = useState<{
@@ -84,17 +96,17 @@ export default function GpInventoryPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  const requestKey = [
-    status,
-    metal,
-    purity,
-    category,
-    acquireType,
-    supplierId,
-    q,
-    groupByModel,
-    reloadCount,
-  ].join("|");
+  /** 필터 축만 모은 키 — 필터가 바뀌면 「더 보기」로 늘려둔 페이지 크기를 원위치시킨다. */
+  const filterKey = [status, metal, purity, category, acquireType, supplierId, q, groupByModel].join(
+    "|",
+  );
+  const limit = limitState.key === filterKey ? limitState.value : PAGE_SIZE;
+  const showMore = useCallback(
+    () => setLimitState({ key: filterKey, value: limit + PAGE_SIZE }),
+    [filterKey, limit],
+  );
+
+  const requestKey = [filterKey, limit, reloadCount].join("|");
   const loading = result?.key !== requestKey;
   const data = !loading ? result?.data : undefined;
   const loadError = !loading ? (result?.error ?? null) : null;
@@ -125,6 +137,7 @@ export default function GpInventoryPage() {
     if (supplierId) params.set("supplierId", supplierId);
     if (q) params.set("q", q);
     if (groupByModel) params.set("groupByModel", "true");
+    else params.set("limit", String(limit));
     void (async () => {
       try {
         const res = await bizApiFetch<GpItemListResponse>(`/biz/gp/items?${params.toString()}`, {
@@ -152,6 +165,7 @@ export default function GpInventoryPage() {
     supplierId,
     q,
     groupByModel,
+    limit,
     reloadCount,
     requestKey,
     token,
@@ -563,6 +577,20 @@ export default function GpInventoryPage() {
               <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">
                 환산 불가 {summary.unconvertibleCount}건
               </span>
+            ) : null}
+            {!groupByModel && data?.hasMore ? (
+              <>
+                <span className="text-caption tabular-nums">
+                  {rows.length.toLocaleString()} / {(data.total ?? 0).toLocaleString()} 표시
+                </span>
+                <button
+                  type="button"
+                  onClick={showMore}
+                  className="h-6 px-2 rounded border border-line bg-white font-semibold hover:bg-surface"
+                >
+                  더 보기
+                </button>
+              </>
             ) : null}
           </>
         ) : (

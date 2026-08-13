@@ -54,6 +54,35 @@ export async function bizApiUpload<T>(
   return data as T;
 }
 
+/**
+ * 파일 응답(CSV 템플릿 등) — Authorization 헤더가 필요해서 <a href> 로는 받을 수 없다.
+ * Blob 으로 받아 임시 objectURL 로 내려받는다.
+ */
+export async function bizApiDownload(
+  path: string,
+  fileName: string,
+  token: string | null,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+  } catch {
+    throw new BizApiError(0, "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
+  }
+  if (!response.ok) {
+    throw new BizApiError(response.status, "파일을 내려받지 못했습니다.");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function bizApiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { method = "GET", body, token } = options;
 
