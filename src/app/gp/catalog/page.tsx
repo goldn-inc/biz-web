@@ -31,6 +31,8 @@ type FormState = {
   defaultWeightGram: string;
   defaultLaborFeeKrw: string;
   defaultTagPrice: string;
+  code: string;
+  hallmarkFactor: string;
   supplierSel: string;
   newSupplierName: string;
   // §9 — 메인/보조 스톤 + 스톤 공임
@@ -55,6 +57,8 @@ function emptyForm(): FormState {
     defaultWeightGram: "",
     defaultLaborFeeKrw: "",
     defaultTagPrice: "",
+    code: "",
+    hallmarkFactor: "",
     supplierSel: "",
     newSupplierName: "",
     mainStoneSel: "",
@@ -79,6 +83,8 @@ function toForm(p: GpCatalogProduct): FormState {
     defaultWeightGram: p.defaultWeightGram != null ? String(p.defaultWeightGram) : "",
     defaultLaborFeeKrw: p.defaultLaborFeeKrw != null ? String(p.defaultLaborFeeKrw) : "",
     defaultTagPrice: p.defaultTagPrice != null ? String(p.defaultTagPrice) : "",
+    code: p.code ?? "",
+    hallmarkFactor: p.hallmarkFactor != null ? String(p.hallmarkFactor) : "",
     supplierSel: p.supplierId ?? "",
     newSupplierName: "",
     mainStoneSel: p.mainStoneId ?? "",
@@ -200,6 +206,8 @@ export default function GpCatalogPage() {
       defaultWeightGram: num(f.defaultWeightGram),
       defaultLaborFeeKrw: num(f.defaultLaborFeeKrw),
       defaultTagPrice: num(f.defaultTagPrice),
+      ...(f.code.trim() ? { code: f.code.trim() } : {}),
+      ...(f.hallmarkFactor.trim() ? { hallmarkFactor: Number(f.hallmarkFactor) } : {}),
       ...(f.supplierSel && f.supplierSel !== NEW_SUPPLIER ? { supplierId: f.supplierSel } : {}),
       ...(f.supplierSel === NEW_SUPPLIER && f.newSupplierName.trim()
         ? { newSupplierName: f.newSupplierName.trim() }
@@ -429,6 +437,7 @@ export default function GpCatalogPage() {
             <thead className="sticky top-0 bg-white shadow-[0_1px_0_0_var(--color-line)]">
               <tr>
                 <th className={th}>No</th>
+                <th className={th}>품번</th>
                 <th className={th}>품명</th>
                 <th className={th}>분류</th>
                 <th className={th}>재질</th>
@@ -436,6 +445,7 @@ export default function GpCatalogPage() {
                 <th className={`${th} text-right`}>표준중량(g)</th>
                 <th className={th}>스톤(메인/보조)</th>
                 <th className={`${th} text-right`}>기본공임</th>
+                <th className={`${th} text-right`}>해리</th>
                 <th className={`${th} text-right`}>소비자가(TAG)</th>
                 <th className={th}>매입처</th>
                 <th className={`${th} text-right`}>재고</th>
@@ -450,6 +460,7 @@ export default function GpCatalogPage() {
                   className="border-b border-line/70 cursor-default hover:bg-surface"
                 >
                   <td className={`${td} text-right tabular-nums`}>{i + 1}</td>
+                  <td className={`${td} tabular-nums text-caption`}>{p.code ?? "—"}</td>
                   <td className={`${td} font-semibold`}>
                     <button
                       type="button"
@@ -458,6 +469,15 @@ export default function GpCatalogPage() {
                     >
                       {p.name}
                     </button>
+                    {/* 주문 유의사항이 메모에만 있는 모델이 있다 — 목록에서 보이지 않으면 안 읽힌다. */}
+                    {p.memo ? (
+                      <span
+                        title={p.memo}
+                        className="ml-1.5 px-1 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 align-middle"
+                      >
+                        메모
+                      </span>
+                    ) : null}
                   </td>
                   <td className={td}>{GP_CATEGORY_LABEL[p.category]}</td>
                   <td className={td}>{GP_METAL_LABEL[p.metalType]}</td>
@@ -467,8 +487,27 @@ export default function GpCatalogPage() {
                     {[p.mainStoneName, p.subStoneName].filter(Boolean).join(" / ") || "—"}
                   </td>
                   <td className={`${td} text-right tabular-nums`}>{krw(p.defaultLaborFeeKrw)}</td>
+                  <td className={`${td} text-right tabular-nums`}>
+                    {p.effectiveHallmark.toFixed(3)}
+                    {p.hallmarkFactor != null ? (
+                      <span className="ml-1 text-[10px] text-primary font-semibold">개별</span>
+                    ) : null}
+                  </td>
+                  {/* 시세연동가가 서면 그것이 진짜 TAG가다 — 고정가는 회색으로 같이 보여준다. */}
                   <td className={`${td} text-right tabular-nums font-bold text-red-600`}>
-                    {krw(p.defaultTagPrice)}
+                    {p.tagPriceSource === "SPOT" ? (
+                      <>
+                        {krw(p.linkedTagPrice)}
+                        <span className="ml-1 text-[10px] text-caption font-semibold">시세</span>
+                      </>
+                    ) : p.tagPriceSource === "FIXED" ? (
+                      <>
+                        {krw(p.defaultTagPrice)}
+                        <span className="ml-1 text-[10px] text-caption font-semibold">고정</span>
+                      </>
+                    ) : (
+                      <span className="text-caption font-normal">—</span>
+                    )}
                   </td>
                   <td className={td}>{p.supplierName ?? "—"}</td>
                   <td className={`${td} text-right tabular-nums font-bold`}>{p.inStockCount}</td>
@@ -650,8 +689,11 @@ export default function GpCatalogPage() {
                   />
                 </div>
                 <div>
-                  <div className={label} title="판매 등록의 판매가 프리필로 쓰인다(§8.4)">
-                    소비자가(TAG가, 원)
+                  <div
+                    className={label}
+                    title="중량·공임이 있으면 시세연동가가 우선한다. 이 값은 계산이 안 될 때의 고정가."
+                  >
+                    소비자가(TAG가, 원) — 고정
                   </div>
                   <input
                     value={editing.form.defaultTagPrice}
@@ -661,6 +703,35 @@ export default function GpCatalogPage() {
                       )
                     }
                     inputMode="numeric"
+                    className={field}
+                  />
+                </div>
+                <div>
+                  <div className={label} title="비우면 재질 기준(설정 화면)을 따른다">
+                    상품 해리
+                  </div>
+                  <input
+                    value={editing.form.hallmarkFactor}
+                    onChange={(e) =>
+                      setEditing(
+                        (c) => c && { ...c, form: { ...c.form, hallmarkFactor: e.target.value } },
+                      )
+                    }
+                    placeholder="재질 기준 사용"
+                    inputMode="decimal"
+                    className={field}
+                  />
+                </div>
+                <div>
+                  <div className={label} title="비우면 재질·순도로 자동 채번(GD14-0001)">
+                    품번
+                  </div>
+                  <input
+                    value={editing.form.code}
+                    onChange={(e) =>
+                      setEditing((c) => c && { ...c, form: { ...c.form, code: e.target.value } })
+                    }
+                    placeholder="자동 채번"
                     className={field}
                   />
                 </div>
@@ -767,8 +838,9 @@ export default function GpCatalogPage() {
                     onChange={(e) =>
                       setEditing((c) => c && { ...c, form: { ...c.form, memo: e.target.value } })
                     }
-                    rows={2}
-                    className="px-2 py-1.5 rounded-md border border-line bg-white w-full resize-none"
+                    rows={8}
+                    placeholder="주문 시 유의사항·스톤 스펙·규격 등 (골드펜 「비고사항」이 여기로 들어온다)"
+                    className="px-2 py-1.5 rounded-md border border-line bg-white w-full resize-y min-h-[64px] font-mono text-[12px] leading-relaxed"
                   />
                 </div>
                 {editing.id ? (

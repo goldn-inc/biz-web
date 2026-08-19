@@ -50,7 +50,10 @@ const GP_TREE: TreeGroup[] = [
   },
   {
     label: "거래처관리",
-    children: [{ href: "/gp/suppliers", label: "거래처" }],
+    children: [
+      { href: "/gp/suppliers", label: "거래처" },
+      { href: "/gp/purchases", label: "매입 등록" },
+    ],
   },
   {
     label: "통계",
@@ -59,8 +62,9 @@ const GP_TREE: TreeGroup[] = [
   {
     label: "기초관리",
     children: [
-      { href: "/gp/settings", label: "개시 잔액" },
+      { href: "/gp/settings", label: "개시 잔액·재질 기준" },
       { href: "/gp/import", label: "초기 재고 이관" },
+      { href: "/gp/import/catalog", label: "카다로그 이관" },
     ],
   },
 ];

@@ -7,7 +7,16 @@
 export type GpItemStatus = "IN_STOCK" | "RENTED" | "SOLD" | "ADJUSTED_OUT" | "VOID";
 export type GpItemSource = "WHOLESALE" | "DIRECT" | "IMPORT";
 export type GpMetalType = "GOLD" | "SILVER";
-export type GpCategory = "RING" | "NECKLACE" | "BRACELET" | "GOLD_BAR" | "MATERIAL" | "ETC";
+export type GpCategory =
+  | "RING"
+  | "NECKLACE"
+  | "BRACELET"
+  | "EARRING"
+  | "PENDANT"
+  | "ANKLET"
+  | "GOLD_BAR"
+  | "MATERIAL"
+  | "ETC";
 
 export const GP_STATUS_LABEL: Record<GpItemStatus, string> = {
   IN_STOCK: "재고",
@@ -27,6 +36,9 @@ export const GP_CATEGORY_LABEL: Record<GpCategory, string> = {
   RING: "반지",
   NECKLACE: "목걸이",
   BRACELET: "팔찌",
+  EARRING: "귀걸이",
+  PENDANT: "펜던트",
+  ANKLET: "발찌",
   GOLD_BAR: "골드바",
   MATERIAL: "자재",
   ETC: "기타",
@@ -55,6 +67,82 @@ export const GP_PURITIES_BY_METAL: Record<GpMetalType, string[]> = {
   SILVER: ["999", "925", "900", "UNKNOWN"],
 };
 
+/** TAG가 출처 — 시세연동가가 서면 SPOT, 못 서면 고정가(FIXED), 둘 다 없으면 NONE. */
+export type GpTagPriceSource = "SPOT" | "FIXED" | "NONE";
+
+/** 재질(순도) 기준 한 줄 — 해리 설정의 SSOT. */
+export type GpMaterialStandard = {
+  purityCode: string;
+  /** 가격 계수(읽기 전용 상수). */
+  pricingFactor: number;
+  hallmarkFactor: number;
+  applyHallmark: boolean;
+  /** 매장이 저장한 값인지 — false 면 코드 기본값을 보고 있는 것. */
+  isCustom: boolean;
+};
+
+export type GpPurchaseLineKind = "PURCHASE" | "PAYMENT" | "RETURN";
+
+export const GP_PURCHASE_KIND_LABEL: Record<GpPurchaseLineKind, string> = {
+  PURCHASE: "매입",
+  PAYMENT: "결제",
+  RETURN: "반품",
+};
+
+/** 요약 한 칸 — 순금중량과 금액을 같이 본다. */
+export type GpPurchaseAmount = { pureGram: number; amount: number };
+
+export type GpPurchaseSummary = {
+  before: GpPurchaseAmount;
+  purchase: GpPurchaseAmount;
+  settled: GpPurchaseAmount;
+  after: GpPurchaseAmount;
+};
+
+export type GpPurchaseLine = {
+  id: string;
+  lineNo: number;
+  kind: GpPurchaseLineKind;
+  note: string | null;
+  purityCode: string | null;
+  purityCoefficient: number | null;
+  actualWeightG: number | null;
+  hallmarkFactor: number | null;
+  pureGram: number | null;
+  quantity: number;
+  unitPrice: number | null;
+  supplyAmount: number;
+  taxRate: number | null;
+  taxAmount: number;
+  totalAmount: number;
+};
+
+export type GpPurchaseRow = {
+  id: string;
+  purchaseNo: string;
+  purchaseDate: string;
+  supplierId: string;
+  supplierName: string | null;
+  materialGroup: string | null;
+  defaultHallmark: number | null;
+  defaultTaxRate: number | null;
+  memo: string | null;
+  purchaseAmount: number;
+  settledAmount: number;
+  createdAt: string;
+};
+
+export type GpPurchaseDetail = GpPurchaseRow & {
+  lines: GpPurchaseLine[];
+  summary: GpPurchaseSummary;
+};
+
+export type GpPurchaseOutstanding = {
+  supplierId: string;
+  supplierName: string | null;
+  outstanding: GpPurchaseAmount;
+};
+
 export type GpItem = {
   id: string;
   serial: string;
@@ -70,6 +158,16 @@ export type GpItem = {
   acquiredLaborFee: number | null;
   /** 모델의 소비자가(TAG가, §8.4) — 판매가 프리필. */
   tagPrice: number | null;
+  /** 시세연동 TAG가 — 개체 실측 중량 기준. 중량·공임이 없으면 null. */
+  linkedTagPrice: number | null;
+  /** 화면이 실제로 보여줄 TAG가의 출처. */
+  tagPriceSource: GpTagPriceSource;
+  /** 계산에 쓰인 해리 — 상품값 ?? 재질기준. */
+  effectiveHallmark: number;
+  /** 원가 — IMPORT 는 시세로 재계산, 나머지는 매입 시점 스냅샷. */
+  spotCost: number | null;
+  /** spotCost 가 시세로 재계산된 값인지(화면 구분 표기용). */
+  isSpotLinkedCost: boolean;
   /** 매입구분(§9.3) — 사입/고금매입. NULL=구분 없음(도매 유래·과거). */
   acquireType: GpAcquireType | null;
   /** 모델 파생 스톤명(§9.1). */
@@ -100,6 +198,13 @@ export type GpInventorySummary = {
   goldPureGramSum: number;
   silverPureGramSum: number;
   unconvertibleCount: number;
+  /** 보유 금속가치 = 순금(순은) 총량 × 시세. 해리·공임·알값이 빠진 "갖고 있는 금속의 값". */
+  goldValueKrw: number | null;
+  silverValueKrw: number | null;
+  metalValueKrw: number | null;
+  goldSpotKrwPerGram: number | null;
+  silverSpotKrwPerGram: number | null;
+  spotAsOf: string | null;
 };
 
 export type GpItemListResponse = {
@@ -151,6 +256,50 @@ export type GpImportResult = {
   errors: GpImportRowError[];
   preview: GpImportRowPreview[];
   summary: GpImportSummary;
+  notices: string[];
+  committed: boolean;
+  importId: string | null;
+  reportUrl: string | null;
+};
+
+/** 카다로그 xlsx 이관(골드펜 기본정보) 결과. */
+export type GpCatalogImportRowError = {
+  line: number;
+  column: string;
+  message: string;
+};
+
+export type GpCatalogImportRowPreview = {
+  line: number;
+  code: string | null;
+  name: string;
+  category: string;
+  metalType: GpMetalType;
+  purityCode: string;
+  weightGram: number | null;
+  laborFee: number | null;
+  mainStoneFee: number | null;
+  subStoneFee: number | null;
+  supplierName: string | null;
+  hasMemo: boolean;
+};
+
+export type GpCatalogImportSummary = {
+  newProducts: number;
+  newSuppliers: number;
+  withMemo: number;
+  withoutWeight: number;
+  byPurity: Record<string, number>;
+};
+
+export type GpCatalogImportResult = {
+  fileName: string;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  errors: GpCatalogImportRowError[];
+  preview: GpCatalogImportRowPreview[];
+  summary: GpCatalogImportSummary;
   notices: string[];
   committed: boolean;
   importId: string | null;
@@ -289,6 +438,13 @@ export type GpCatalogProduct = {
   defaultWeightGram: number | null;
   defaultLaborFeeKrw: number | null;
   defaultTagPrice: number | null;
+  /** 매장 품번(GD14-0001…). */
+  code: string | null;
+  /** 상품 단위 해리 덮어쓰기(비면 재질 기준). */
+  hallmarkFactor: number | null;
+  effectiveHallmark: number;
+  linkedTagPrice: number | null;
+  tagPriceSource: GpTagPriceSource;
   supplierId: string | null;
   supplierName: string | null;
   mainStoneId: string | null;

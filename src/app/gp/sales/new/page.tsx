@@ -29,6 +29,14 @@ type SaleResult = { id: string; saleNo: number; totalAmount: number };
  * GP 판매 등록(§5.3) — 스캔/시리얼 입력 상주 → 개체 라인 적재, 비개체 라인 보조.
  * 결제 3칸 분할, 라인 합=결제 합 검증, Ctrl+Enter 저장(한 트랜잭션).
  */
+/** 판매가 프리필 — 시세연동가 우선, 없으면 고정 TAG가, 둘 다 없으면 빈 칸. */
+function tagPriceOf(item: GpItemDetail): string {
+  if (item.tagPriceSource === "SPOT" && item.linkedTagPrice != null) {
+    return String(item.linkedTagPrice);
+  }
+  return item.tagPrice != null ? String(item.tagPrice) : "";
+}
+
 export default function GpSalesNewPage() {
   const { token } = useBizSession();
 
@@ -81,8 +89,9 @@ export default function GpSalesNewPage() {
               name: item.productName,
               pureGram: item.pureGram,
               acquiredLaborFee: item.acquiredLaborFee,
-              // §8.4 — 모델의 소비자가(TAG가)가 있으면 판매가 프리필(수정 가능)
-              salePrice: item.tagPrice != null ? String(item.tagPrice) : "",
+              // §8.4 — 소비자가(TAG가) 프리필(수정 가능). 시세연동가가 서면 그쪽이 우선이고,
+              // 중량·공임이 없어 계산이 안 될 때만 고정가로 떨어진다.
+              salePrice: tagPriceOf(item),
             },
           ];
         });

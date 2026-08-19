@@ -215,7 +215,10 @@ export default function GpItemDetailPage() {
                   ["순중량", `${gram(data.pureGram)}g`],
                   ["매입원가", krw(data.acquiredUnitCost)],
                   ["매입공임", krw(data.acquiredLaborFee)],
-                  ["소비자가(TAG)", krw(data.tagPrice)],
+                  [
+                    data.tagPriceSource === "SPOT" ? "소비자가(TAG, 시세)" : "소비자가(TAG)",
+                    krw(data.tagPriceSource === "SPOT" ? data.linkedTagPrice : data.tagPrice),
+                  ],
                   ["입고 경로", GP_SOURCE_LABEL[data.source]],
                   [
                     "입고처",

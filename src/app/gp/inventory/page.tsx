@@ -285,6 +285,7 @@ export default function GpInventoryPage() {
             "실중량(g)",
             "순중량(g)",
             "매입공임",
+            "원가",
             "소비자가(TAG)",
             "입고처",
             "입고일",
@@ -300,7 +301,8 @@ export default function GpInventoryPage() {
               r.weightG ?? "",
               r.pureGram ?? "",
               r.acquiredLaborFee ?? "",
-              r.tagPrice ?? "",
+              r.spotCost ?? "",
+              r.tagPriceSource === "SPOT" ? (r.linkedTagPrice ?? "") : (r.tagPrice ?? ""),
               esc(r.supplierName),
               kstDate(r.receivedAt),
               GP_STATUS_LABEL[r.status],
@@ -483,6 +485,7 @@ export default function GpInventoryPage() {
                   <th className={thNum}>실중량(g)</th>
                   <th className={thNum}>순중량(g)</th>
                   <th className={thNum}>매입공임</th>
+                  <th className={thNum}>원가</th>
                   <th className={thNum}>소비자가(TAG)</th>
                   <th className={th}>매입구분</th>
                   <th className={th}>입고처</th>
@@ -538,7 +541,23 @@ export default function GpInventoryPage() {
                       <td className={tdNum}>{gram(r.weightG)}</td>
                       <td className={tdNum}>{gram(r.pureGram)}</td>
                       <td className={tdNum}>{krw(r.acquiredLaborFee)}</td>
-                      <td className={`${tdNum} font-semibold text-red-600`}>{krw(r.tagPrice)}</td>
+                      {/* IMPORT 만 시세로 재계산된다 — 나머지는 매입 시점 스냅샷이라 구분해 보여준다. */}
+                      <td className={tdNum}>
+                        {krw(r.spotCost)}
+                        {r.isSpotLinkedCost ? (
+                          <span className="ml-1 text-[10px] text-caption font-semibold">시세</span>
+                        ) : null}
+                      </td>
+                      <td className={`${tdNum} font-semibold text-red-600`}>
+                        {r.tagPriceSource === "SPOT"
+                          ? krw(r.linkedTagPrice)
+                          : r.tagPriceSource === "FIXED"
+                            ? krw(r.tagPrice)
+                            : "—"}
+                        {r.tagPriceSource === "SPOT" ? (
+                          <span className="ml-1 text-[10px] text-caption font-semibold">시세</span>
+                        ) : null}
+                      </td>
                       <td className={td}>{r.acquireType ? GP_ACQUIRE_LABEL[r.acquireType] : "—"}</td>
                       <td className={td}>{r.supplierName ?? (r.source === "WHOLESALE" ? "본사(도매)" : "—")}</td>
                       <td className={td}>{kstDate(r.receivedAt)}</td>
@@ -573,6 +592,21 @@ export default function GpInventoryPage() {
             <span>
               은 순중량 <b className="tabular-nums">{gram(summary.silverPureGramSum)}g</b>
             </span>
+            {/* 보유 금속가치 — 순금 총량 × 시세. 파는 값이 아니라 갖고 있는 금속의 값이다. */}
+            {summary.metalValueKrw !== null ? (
+              <span
+                title={
+                  `금 ${gram(summary.goldPureGramSum)}g × ${krw(summary.goldSpotKrwPerGram)}` +
+                  (summary.silverSpotKrwPerGram
+                    ? ` + 은 ${gram(summary.silverPureGramSum)}g × ${krw(summary.silverSpotKrwPerGram)}`
+                    : "") +
+                  (summary.spotAsOf ? ` · ${summary.spotAsOf} 시세` : "")
+                }
+                className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold"
+              >
+                금속가치 <b className="tabular-nums">{krw(summary.metalValueKrw)}</b>
+              </span>
+            ) : null}
             {summary.unconvertibleCount > 0 ? (
               <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">
                 환산 불가 {summary.unconvertibleCount}건
@@ -655,6 +689,11 @@ export default function GpInventoryPage() {
                       ["실중량", `${gram(detail.data.weightG)}g`],
                       ["순중량", `${gram(detail.data.pureGram)}g`],
                       ["매입원가", krw(detail.data.acquiredUnitCost)],
+                      [
+                        detail.data.isSpotLinkedCost ? "원가(시세 반영)" : "원가",
+                        krw(detail.data.spotCost),
+                      ],
+                      ["적용 해리", detail.data.effectiveHallmark.toFixed(3)],
                       ["매입공임", krw(detail.data.acquiredLaborFee)],
                       ["입고 경로", GP_SOURCE_LABEL[detail.data.source]],
                       ["입고처", detail.data.supplierName ?? (detail.data.source === "WHOLESALE" ? "본사(도매)" : "—")],

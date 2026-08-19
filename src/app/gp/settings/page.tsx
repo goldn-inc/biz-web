@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import { gram, krw } from "@/lib/gp";
+import MaterialStandardsPanel from "@/components/gp/MaterialStandardsPanel";
 
 type OpeningStatus = {
   cash: { hasOpening: boolean; balance: number };
@@ -90,7 +91,7 @@ export default function GpSettingsPage() {
 
   return (
     <div className="flex-1 overflow-auto bg-white">
-      <div className="max-w-xl px-6 py-5">
+      <div className="max-w-3xl px-6 py-5">
         <h1 className="text-[15px] font-extrabold mb-1">기초 설정 — 개시 잔액</h1>
         <p className="text-caption text-[12px] mb-4 leading-relaxed">
           개업(또는 이 프로그램 전환) 시점의 현금·금·은 시재를 한 번 입력합니다. 이미 개시가 있으면
@@ -156,6 +157,8 @@ export default function GpSettingsPage() {
             </div>
           </div>
         )}
+
+        <MaterialStandardsPanel />
       </div>
     </div>
   );
