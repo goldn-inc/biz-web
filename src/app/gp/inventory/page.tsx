@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
-import { bizApiFetch, BizApiError } from "@/lib/api";
+import { bizApiDownload, bizApiFetch, BizApiError } from "@/lib/api";
 import { DirectRegisterModal } from "@/components/gp/DirectRegisterModal";
 import {
   GP_ACQUIRE_LABEL,
@@ -254,71 +254,65 @@ export default function GpInventoryPage() {
       ?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
 
-  /** 현재 격자를 그대로 CSV 로 — 서버 전체 내보내기(GET /biz/gp/export)는 후속. */
+  /**
+   * 묶어보기 CSV — groups 는 이미 필터 전체를 GROUP BY 로 집계한 값이라(§listGroups)
+   * 페이지 상한과 무관하게 완전하다. 그대로 클라이언트에서 만든다.
+   * 개체별 CSV는 화면에 로드된 rows(최대 500)만으로는 불완전해서, 서버가 필터 전체를
+   * 상한 없이 뽑는 GET /biz/gp/export 를 호출한다.
+   */
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
   const exportCsv = useCallback(() => {
-    const esc = (v: string | number | null) => {
-      const s = v === null ? "" : String(v);
-      return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-    };
-    const lines = groupByModel
-      ? [
-          ["품명", "분류", "재질", "순도", "수량", "중량합(g)", "순중량합(g)"].join(","),
-          ...groups.map((g) =>
-            [
-              esc(g.productName),
-              GP_CATEGORY_LABEL[g.category],
-              GP_METAL_LABEL[g.metalType],
-              g.purityCode,
-              g.count,
-              g.weightSum,
-              g.pureGramSum,
-            ].join(","),
-          ),
-        ]
-      : [
+    if (groupByModel) {
+      const esc = (v: string | number | null) => {
+        const s = v === null ? "" : String(v);
+        return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+      };
+      const lines = [
+        ["품명", "분류", "재질", "순도", "수량", "중량합(g)", "순중량합(g)"].join(","),
+        ...groups.map((g) =>
           [
-            "시리얼",
-            "품명",
-            "분류",
-            "재질",
-            "순도",
-            "실중량(g)",
-            "순중량(g)",
-            "매입공임",
-            "원가",
-            "소비자가(TAG)",
-            "입고처",
-            "입고일",
-            "상태",
+            esc(g.productName),
+            GP_CATEGORY_LABEL[g.category],
+            GP_METAL_LABEL[g.metalType],
+            g.purityCode,
+            g.count,
+            g.weightSum,
+            g.pureGramSum,
           ].join(","),
-          ...rows.map((r) =>
-            [
-              r.serial,
-              esc(r.productName),
-              GP_CATEGORY_LABEL[r.category],
-              GP_METAL_LABEL[r.metalType],
-              r.purityCode,
-              r.weightG ?? "",
-              r.pureGram ?? "",
-              r.acquiredLaborFee ?? "",
-              r.spotCost ?? "",
-              r.tagPriceSource === "SPOT" ? (r.linkedTagPrice ?? "") : (r.tagPrice ?? ""),
-              esc(r.supplierName),
-              kstDate(r.receivedAt),
-              GP_STATUS_LABEL[r.status],
-            ].join(","),
-          ),
-        ];
+        ),
+      ];
+      const kst = new Date(Date.now() + 9 * 3600 * 1000);
+      const stamp = kst.toISOString().slice(0, 10).replaceAll("-", "");
+      const blob = new Blob([`﻿${lines.join("\n")}`], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gp-재고-모델별-${stamp}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("status", status);
+    if (metal) params.set("metal", metal);
+    if (purity) params.set("purity", purity);
+    if (category) params.set("category", category);
+    if (acquireType) params.set("acquireType", acquireType);
+    if (supplierId) params.set("supplierId", supplierId);
+    if (q) params.set("q", q);
     const kst = new Date(Date.now() + 9 * 3600 * 1000);
     const stamp = kst.toISOString().slice(0, 10).replaceAll("-", "");
-    const blob = new Blob([`﻿${lines.join("\n")}`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gp-재고-${stamp}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [rows, groups, groupByModel]);
+    setExporting(true);
+    setExportError(null);
+    void bizApiDownload(`/biz/gp/export?${params.toString()}`, `gp-재고-${stamp}.csv`, token)
+      .catch((error) =>
+        setExportError(error instanceof BizApiError ? error.message : "CSV를 내려받지 못했습니다."),
+      )
+      .finally(() => setExporting(false));
+  }, [groupByModel, groups, status, metal, purity, category, acquireType, supplierId, q, token]);
 
   const th = "px-2 py-1.5 text-left font-bold text-[12px] text-caption whitespace-nowrap";
   const thNum = `${th} text-right`;
@@ -364,10 +358,13 @@ export default function GpInventoryPage() {
             <button
               type="button"
               onClick={exportCsv}
-              className="h-8 px-3 rounded-md bg-primary hover:bg-primary-light text-white font-bold"
+              disabled={exporting}
+              title={groupByModel ? undefined : "현재 필터에 걸린 전체 재고를 내려받습니다"}
+              className="h-8 px-3 rounded-md bg-primary hover:bg-primary-light text-white font-bold disabled:opacity-50"
             >
-              엑셀
+              {exporting ? "내려받는 중…" : "엑셀"}
             </button>
+            {exportError ? <span className="text-[12px] text-red-600">{exportError}</span> : null}
           </div>
         </div>
 
