@@ -115,6 +115,8 @@ export type GpPurchaseLine = {
   taxRate: number | null;
   taxAmount: number;
   totalAmount: number;
+  /** 이 라인에서 만들어진 재고 개체 수(0=아직 안 만듦). */
+  itemCount: number;
 };
 
 export type GpPurchaseRow = {

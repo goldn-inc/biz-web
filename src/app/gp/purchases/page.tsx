@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
@@ -514,7 +515,14 @@ export default function GpPurchasesPage() {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id} className="border-b border-line/60 text-[13px]">
-                    <td className="px-2 py-1.5 tabular-nums">{row.purchaseNo}</td>
+                    <td className="px-2 py-1.5 tabular-nums">
+                      <Link
+                        href={`/gp/purchases/${row.id}`}
+                        className="text-primary font-semibold hover:underline"
+                      >
+                        {row.purchaseNo}
+                      </Link>
+                    </td>
                     <td className="px-2 py-1.5">{row.purchaseDate}</td>
                     <td className="px-2 py-1.5">{row.supplierName ?? "—"}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
