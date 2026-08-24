@@ -12,12 +12,17 @@ import {
   GP_PURITIES_BY_METAL,
   gram,
   krw,
+  kstDate,
   type GpCatalogProduct,
+  type GpCatalogProductDetail,
   type GpCategory,
   type GpMetalType,
   type GpStoneRow,
   type GpSupplier,
 } from "@/lib/gp";
+
+const MAX_IMAGES = 5;
+type UploadedImage = { key: string; url: string };
 
 const dd = "h-8 px-2 rounded-md border border-line bg-white text-[13px]";
 const NEW_SUPPLIER = "__new__";
@@ -52,8 +57,8 @@ type FormState = {
   subStoneSel: string;
   newSubStoneName: string;
   subStoneFee: string;
-  imageKey: string | null;
-  imageUrl: string | null;
+  /** 등록 순서(=노출 순서), 첫 장이 대표 사진. */
+  images: UploadedImage[];
   memo: string;
   isActive: boolean;
 };
@@ -77,8 +82,7 @@ function emptyForm(): FormState {
     subStoneSel: "",
     newSubStoneName: "",
     subStoneFee: "",
-    imageKey: null,
-    imageUrl: null,
+    images: [],
     memo: "",
     isActive: true,
   };
@@ -103,8 +107,7 @@ function toForm(p: GpCatalogProduct): FormState {
     subStoneSel: p.subStoneId ?? "",
     newSubStoneName: "",
     subStoneFee: p.subStoneFee != null ? String(p.subStoneFee) : "",
-    imageKey: p.imageKey,
-    imageUrl: p.imageUrl,
+    images: p.imageKeys.map((key, i) => ({ key, url: p.imageUrls[i] })),
     memo: p.memo ?? "",
     isActive: p.isActive,
   };
@@ -140,6 +143,39 @@ export default function GpCatalogPage() {
   const [uploading, setUploading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  /** 상세 보기 팝업(§8.5, 골드펜 대응) — 카드 클릭은 여기부터, 수정은 팝업 안 버튼으로. */
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<GpCatalogProductDetail | null>(null);
+  const [viewError, setViewError] = useState<string | null>(null);
+  const [photoIndex, setPhotoIndex] = useState(0);
+
+  /** 상세 팝업 열기 — 이전 모델의 잔상(사진 인덱스·에러) 없이 새로 연다. */
+  const openViewing = useCallback((id: string) => {
+    setViewing(null);
+    setViewError(null);
+    setPhotoIndex(0);
+    setViewingId(id);
+  }, []);
+
+  useEffect(() => {
+    if (!viewingId) return;
+    let cancelled = false;
+    void bizApiFetch<GpCatalogProductDetail>(`/biz/gp/products/${viewingId}`, { token })
+      .then((d) => {
+        if (!cancelled) setViewing(d);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setViewError(
+            error instanceof BizApiError ? error.message : "모델을 불러오지 못했습니다.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingId, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,9 +222,9 @@ export default function GpCatalogPage() {
       formData.append("file", file);
       setUploading(true);
       setSaveError(null);
-      void bizApiUpload<{ key: string; url: string }>("/biz/gp/products/images", formData, token)
-        .then((r) =>
-          setEditing((c) => c && { ...c, form: { ...c.form, imageKey: r.key, imageUrl: r.url } }),
+      void bizApiUpload<UploadedImage>("/biz/gp/products/images", formData, token)
+        .then((img) =>
+          setEditing((c) => c && { ...c, form: { ...c.form, images: [...c.form.images, img] } }),
         )
         .catch((error) =>
           setSaveError(
@@ -199,6 +235,12 @@ export default function GpCatalogPage() {
     },
     [token],
   );
+
+  const removeImage = useCallback((key: string) => {
+    setEditing(
+      (c) => c && { ...c, form: { ...c.form, images: c.form.images.filter((i) => i.key !== key) } },
+    );
+  }, []);
 
   const save = useCallback(() => {
     if (!editing) return;
@@ -235,7 +277,7 @@ export default function GpCatalogPage() {
         : {}),
       ...(editing.id && !f.subStoneSel ? { clearSubStone: true } : {}),
       subStoneFee: f.subStoneSel ? num(f.subStoneFee) : undefined,
-      ...(f.imageKey ? { imageKey: f.imageKey } : {}),
+      imageKeys: f.images.map((i) => i.key),
       memo: f.memo.trim() || undefined,
       ...(editing.id ? { isActive: f.isActive } : {}),
     };
@@ -382,15 +424,24 @@ export default function GpCatalogPage() {
               >
                 <button
                   type="button"
-                  onClick={() => setEditing({ id: p.id, form: toForm(p) })}
+                  onClick={() => openViewing(p.id)}
                   className="relative h-40 bg-surface flex items-center justify-center overflow-hidden"
-                  title="클릭하여 수정"
+                  title="클릭하여 상세 보기"
                 >
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                  {p.imageUrls[0] ? (
+                    <img
+                      src={p.imageUrls[0]}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <span className="text-caption text-[12px]">사진 없음</span>
                   )}
+                  {p.imageUrls.length > 1 ? (
+                    <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/60 text-white text-[11px] font-bold">
+                      1/{p.imageUrls.length}
+                    </span>
+                  ) : null}
                   {p.inStockCount > 0 ? (
                     <span className="absolute top-2 right-2 min-w-6 h-6 px-1.5 rounded-full bg-ink text-white text-[12px] font-bold flex items-center justify-center">
                       {p.inStockCount}
@@ -405,7 +456,7 @@ export default function GpCatalogPage() {
                 <div className="p-2.5 flex flex-col gap-1">
                   <button
                     type="button"
-                    onClick={() => setEditing({ id: p.id, form: toForm(p) })}
+                    onClick={() => openViewing(p.id)}
                     className="text-left font-bold text-primary hover:underline truncate"
                   >
                     {p.name}
@@ -464,7 +515,7 @@ export default function GpCatalogPage() {
               {(rows ?? []).map((p, i) => (
                 <tr
                   key={p.id}
-                  onDoubleClick={() => setEditing({ id: p.id, form: toForm(p) })}
+                  onDoubleClick={() => openViewing(p.id)}
                   className="border-b border-line/70 cursor-default hover:bg-surface"
                 >
                   <td className={`${td} text-right tabular-nums`}>{i + 1}</td>
@@ -472,7 +523,7 @@ export default function GpCatalogPage() {
                   <td className={`${td} font-semibold`}>
                     <button
                       type="button"
-                      onClick={() => setEditing({ id: p.id, form: toForm(p) })}
+                      onClick={() => openViewing(p.id)}
                       className="text-primary hover:underline"
                     >
                       {p.name}
@@ -558,26 +609,46 @@ export default function GpCatalogPage() {
             </div>
 
             <div className="flex gap-3">
-              {/* 사진 — 골드펜 카다로그의 본체(§8.4). 프록시 업로드 1장 */}
-              <div className="w-40 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading}
-                  className="w-40 h-40 rounded-lg border border-dashed border-line bg-surface flex items-center justify-center overflow-hidden hover:border-primary"
-                >
-                  {uploading ? (
-                    <span className="text-caption text-[12px]">업로드 중…</span>
-                  ) : editing.form.imageUrl ? (
-                    <img
-                      src={editing.form.imageUrl}
-                      alt="모델 사진"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-caption text-[12px]">사진 업로드</span>
-                  )}
-                </button>
+              {/* 사진 — 골드펜 카다로그의 본체(§8.4). 프록시 업로드, 최대 MAX_IMAGES 장(첫 장이 대표) */}
+              <div className="w-40 shrink-0 flex flex-col gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {editing.form.images.map((img, i) => (
+                    <div
+                      key={img.key}
+                      className="relative w-[74px] h-[74px] rounded-md border border-line bg-surface overflow-hidden"
+                    >
+                      <img src={img.url} alt="" className="w-full h-full object-cover" />
+                      {i === 0 ? (
+                        <span className="absolute bottom-0 left-0 right-0 py-0.5 text-center text-[9px] font-bold text-white bg-black/60">
+                          대표
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        aria-label="사진 삭제"
+                        onClick={() => removeImage(img.key)}
+                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-ink text-white grid place-items-center text-[10px] leading-none"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  {editing.form.images.length < MAX_IMAGES ? (
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading}
+                      className="w-[74px] h-[74px] rounded-md border border-dashed border-line bg-surface flex items-center justify-center hover:border-primary disabled:opacity-50"
+                    >
+                      <span className="text-caption text-[11px]">
+                        {uploading ? "업로드 중…" : "+ 추가"}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+                <span className="text-[11px] text-caption">
+                  {editing.form.images.length}/{MAX_IMAGES}장 · 첫 장이 대표 사진
+                </span>
                 <input
                   ref={fileRef}
                   type="file"
@@ -889,6 +960,221 @@ export default function GpCatalogPage() {
           </div>
         </div>
       ) : null}
+
+      {viewingId ? (
+        <div
+          className="fixed inset-0 z-40 bg-black/20 flex items-center justify-center"
+          onMouseDown={() => setViewingId(null)}
+        >
+          <div
+            className="w-[720px] max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-line shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-2.5 bg-blue-600 text-white rounded-t-lg">
+              <h2 className="font-extrabold text-[14px] truncate">
+                {viewing ? `${viewing.name}${viewing.code ? `[${viewing.code}]` : ""}` : "상세 보기"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setViewingId(null)}
+                className="text-white/80 hover:text-white px-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {viewError ? (
+              <div className="p-6 text-center text-red-600 text-[13px]">{viewError}</div>
+            ) : !viewing ? (
+              <div className="p-10 text-center text-caption text-[13px]">불러오는 중…</div>
+            ) : (
+              <div className="p-4 flex gap-4">
+                {/* 사진 — 여러 장이면 좌우 화살표로 넘긴다 */}
+                <div className="w-64 shrink-0">
+                  <div className="relative w-64 h-64 rounded-lg border border-line bg-surface overflow-hidden">
+                    {viewing.imageUrls.length > 0 ? (
+                      <img
+                        src={viewing.imageUrls[photoIndex]}
+                        alt={viewing.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-caption text-[12px]">
+                        사진 없음
+                      </div>
+                    )}
+                    {viewing.imageUrls.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          aria-label="이전 사진"
+                          onClick={() =>
+                            setPhotoIndex(
+                              (i) => (i - 1 + viewing.imageUrls.length) % viewing.imageUrls.length,
+                            )
+                          }
+                          className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/90 border border-line grid place-items-center hover:bg-white"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="다음 사진"
+                          onClick={() => setPhotoIndex((i) => (i + 1) % viewing.imageUrls.length)}
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/90 border border-line grid place-items-center hover:bg-white"
+                        >
+                          →
+                        </button>
+                        <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[11px] font-bold">
+                          {photoIndex + 1}/{viewing.imageUrls.length}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                  {viewing.imageUrls.length > 1 ? (
+                    <div className="mt-1.5 flex gap-1.5 flex-wrap">
+                      {viewing.imageUrls.map((url, i) => (
+                        <button
+                          key={url}
+                          type="button"
+                          onClick={() => setPhotoIndex(i)}
+                          className={`w-10 h-10 rounded border overflow-hidden ${
+                            i === photoIndex ? "border-primary border-2" : "border-line"
+                          }`}
+                        >
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex-1 min-w-0 flex flex-col gap-3 text-[13px]">
+                  <DetailGrid
+                    rows={[
+                      ["품명", viewing.name],
+                      ["품번", viewing.code ?? "—"],
+                      ["분류구분", GP_CATEGORY_LABEL[viewing.category]],
+                      [
+                        "표준재질",
+                        `${GP_METAL_LABEL[viewing.metalType]} ${
+                          viewing.purityCode === "UNKNOWN" ? "미상" : viewing.purityCode
+                        }`,
+                      ],
+                      [
+                        "표준중량(g)",
+                        viewing.defaultWeightGram != null ? gram(viewing.defaultWeightGram) : "—",
+                      ],
+                      ["출시일", kstDate(viewing.createdAt)],
+                    ]}
+                  />
+                  <DetailGrid
+                    rows={[
+                      ["메인스톤", viewing.mainStoneName ?? "—"],
+                      ["보조스톤", viewing.subStoneName ?? "—"],
+                    ]}
+                  />
+                  <div>
+                    <div className="grid grid-cols-[80px_1fr] border border-line rounded-md overflow-hidden text-[12px]">
+                      <div className="col-span-2 px-2 py-1 bg-surface font-bold border-b border-line">
+                        매입처 · 공임
+                      </div>
+                      <div className="px-2 py-1.5 text-caption border-b border-line">매입처</div>
+                      <div className="px-2 py-1.5 border-b border-line">
+                        {viewing.supplierName ?? "미지정"}
+                      </div>
+                      <div className="px-2 py-1.5 text-caption border-b border-line">기본</div>
+                      <div className="px-2 py-1.5 tabular-nums border-b border-line">
+                        {krw(viewing.defaultLaborFeeKrw)}
+                      </div>
+                      <div className="px-2 py-1.5 text-caption border-b border-line">메인스톤</div>
+                      <div className="px-2 py-1.5 tabular-nums border-b border-line">
+                        {viewing.mainStoneFee != null ? krw(viewing.mainStoneFee) : "—"}
+                      </div>
+                      <div className="px-2 py-1.5 text-caption border-b border-line">보조스톤</div>
+                      <div className="px-2 py-1.5 tabular-nums border-b border-line">
+                        {viewing.subStoneFee != null ? krw(viewing.subStoneFee) : "—"}
+                      </div>
+                      <div className="px-2 py-1.5 text-caption font-bold">합계</div>
+                      <div className="px-2 py-1.5 tabular-nums font-bold text-red-600">
+                        {krw(
+                          (viewing.defaultLaborFeeKrw ?? 0) +
+                            (viewing.mainStoneFee ?? 0) +
+                            (viewing.subStoneFee ?? 0),
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 text-center">
+                    {(
+                      [
+                        ["재고개수", viewing.inStockCount],
+                        ["판매개수", viewing.soldCount],
+                        ["대여중", viewing.rentedCount],
+                        ["전체개체", viewing.totalItemCount],
+                      ] as const
+                    ).map(([lbl, v]) => (
+                      <div key={lbl} className="rounded-md border border-line py-1.5">
+                        <div className="text-[11px] text-caption">{lbl}</div>
+                        <div className="font-extrabold tabular-nums">{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {viewing.memo ? (
+                    <div className="rounded-md border border-line bg-surface p-2 text-[12px] whitespace-pre-wrap leading-relaxed">
+                      {viewing.memo}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <div className="px-4 pb-4 flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setViewingId(null)}
+                className="h-8 px-3 rounded-md border border-line text-body hover:bg-surface"
+              >
+                닫기
+              </button>
+              {viewing ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditing({ id: viewing.id, form: toForm(viewing) });
+                    setViewingId(null);
+                  }}
+                  className="h-8 px-4 rounded-md bg-primary hover:bg-primary-light text-white font-bold"
+                >
+                  수정
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** 2열 라벨/값 표 — 상세 팝업의 필드 그룹 렌더링 공용. */
+function DetailGrid({ rows }: { rows: [string, string][] }) {
+  return (
+    <div className="grid grid-cols-2 border border-line rounded-md overflow-hidden text-[12px]">
+      {rows.map(([lbl, v], i) => (
+        <div key={lbl} className={`contents`}>
+          <div
+            className={`px-2 py-1.5 text-caption bg-surface ${
+              i < rows.length - 1 ? "border-b border-line" : ""
+            }`}
+          >
+            {lbl}
+          </div>
+          <div className={`px-2 py-1.5 ${i < rows.length - 1 ? "border-b border-line" : ""}`}>
+            {v}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

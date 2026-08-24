@@ -455,8 +455,9 @@ export type GpCatalogProduct = {
   subStoneId: string | null;
   subStoneName: string | null;
   subStoneFee: number | null;
-  imageKey: string | null;
-  imageUrl: string | null;
+  /** 등록 순서(=노출 순서), 첫 장이 대표 사진. */
+  imageKeys: string[];
+  imageUrls: string[];
   memo: string | null;
   isActive: boolean;
   inStockCount: number;
