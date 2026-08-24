@@ -70,12 +70,6 @@ export function getHydratedServerSnapshot(): boolean {
   return false;
 }
 
-export function updateBizAccount(patch: Partial<BizAccount>): void {
-  const session = loadBizSession();
-  if (!session) return;
-  sessionStorage.setItem(ACCOUNT_KEY, JSON.stringify({ ...session.account, ...patch }));
-}
-
 export function clearBizSession(): void {
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(ACCOUNT_KEY);

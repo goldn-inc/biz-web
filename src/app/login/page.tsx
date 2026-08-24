@@ -9,6 +9,9 @@ import { FloatingBackdrop } from "@/components/FloatingBackdrop";
 
 type ErrorType = null | "mismatch" | "disabled";
 
+/** 로그인 화면으로 되돌려 보낸 사유 — 비밀번호를 바꿨거나(changed) 세션이 끊겼거나(expired). */
+type Notice = null | "changed" | "expired";
+
 type LoginResponse = {
   accessToken: string;
   account: BizAccount;
@@ -29,6 +32,10 @@ function LoginInner() {
   // 세션 가드가 붙여 보낸 원래 목적지(?next=/gp/…) — 내부 경로만 신뢰한다(오픈 리다이렉트 방지)
   const rawNext = params.get("next");
   const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : null;
+  // 비밀번호 변경·세션 만료로 되돌아온 경우의 안내. 제출을 시작하면 지워 에러 배너와 겹치지 않게 한다.
+  const [notice, setNotice] = useState<Notice>(
+    params.get("changed") === "1" ? "changed" : params.get("expired") === "1" ? "expired" : null,
+  );
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -62,6 +69,7 @@ function LoginInner() {
     e.preventDefault();
     if (submitting) return;
     setSubmitting(true);
+    setNotice(null);
     setErrorType(null);
     setErrorMessage(null);
     try {
@@ -141,6 +149,20 @@ function LoginInner() {
           animate={{ opacity: 1, y: 0 }}
           transition={reduced ? { duration: 0 } : { duration: 0.45, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
         >
+          {notice && (
+            <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-600 shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <p className="text-sm leading-relaxed text-blue-800 m-0 font-medium">
+                {notice === "changed"
+                  ? "비밀번호가 변경되었습니다. 새 비밀번호로 다시 로그인해주세요."
+                  : "로그인이 만료되었습니다. 다시 로그인해주세요."}
+              </p>
+            </div>
+          )}
           {errorType === "mismatch" && (
             <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-4 h-4 text-red-600 shrink-0 mt-0.5">

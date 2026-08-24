@@ -1,16 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import {
+  clearBizSession,
   getBizSessionServerSnapshot,
   getBizSessionSnapshot,
   getHydratedServerSnapshot,
   getHydratedSnapshot,
   loadBizSession,
   subscribeBizSession,
-  updateBizAccount,
 } from "@/lib/session";
 
 /**
@@ -37,7 +37,15 @@ export default function ChangePasswordPage() {
   );
   const firstTime = session?.account.mustChangePassword ?? false;
 
+  /**
+   * 변경 성공으로 우리가 직접 로그인 화면에 보낸 뒤에는 아래 세션 가드가 다시 끼어들지 않게 한다 —
+   * 세션을 지운 직후 리렌더가 한 번만 일어나도 가드가 `?changed=1` 없는 /login 으로 덮어써서
+   * "비밀번호가 변경됐으니 새 비밀번호로 로그인하라"는 안내가 사라진다.
+   */
+  const navigatedRef = useRef(false);
+
   useEffect(() => {
+    if (navigatedRef.current) return;
     // 하이드레이션 전 세션 null 은 판정 보류(하드 리로드 오탈락 방지)
     if (hydrated && !session) router.replace("/login");
   }, [hydrated, session, router]);
@@ -69,15 +77,26 @@ export default function ChangePasswordPage() {
         body: { currentPassword, newPassword },
         token: session.token,
       });
-      updateBizAccount({ mustChangePassword: false });
-      router.replace("/dashboard");
+      /**
+       * 서버는 비밀번호를 바꾸면서 **이 요청을 보낸 본인 세션까지 끊는다** — `sessions_revoked_at`
+       * 스탬프로 잔존 access 토큰을 즉시 무효화하고(back_end biz-auth.service.ts:346-353),
+       * 응답으로 새 토큰을 주지도 않는다(`{ ok: true }`). 즉 이 시점부터 손에 든 토큰은 죽은 값이다.
+       *
+       * 종전엔 세션 캐시의 mustChangePassword 만 고쳐 쓰고 그대로 /dashboard 로 들어갔다. 화면은
+       * 로그인 상태로 보이는데 모든 업무 화면 조회가 401 이라, 임시비밀번호를 받은 신규 매장이
+       * 비밀번호를 바꾸자마자 아무것도 못 하는 상태로 떨어졌다(새로고침해도 낫지 않는다).
+       * 서버 계약대로 세션을 버리고 재로그인시킨다.
+       */
+      navigatedRef.current = true;
+      clearBizSession();
+      router.replace("/login?changed=1");
+      return;
     } catch (err) {
       setError(
         err instanceof BizApiError
           ? err.message
           : "요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.",
       );
-    } finally {
       setSubmitting(false);
     }
   };
