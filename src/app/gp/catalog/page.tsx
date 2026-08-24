@@ -23,6 +23,16 @@ const dd = "h-8 px-2 rounded-md border border-line bg-white text-[13px]";
 const NEW_SUPPLIER = "__new__";
 const NEW_STONE = "__new__";
 
+/** 스톤 표기 — 이관 카다로그는 사전 이름 없이 알값만 오므로 금액이라도 보여준다. */
+function stoneText(p: GpCatalogProduct): string | null {
+  const part = (name: string | null, fee: number | null) =>
+    name && fee ? `${name} ${krw(fee)}` : (name ?? (fee ? krw(fee) : null));
+  const main = part(p.mainStoneName, p.mainStoneFee);
+  const sub = part(p.subStoneName, p.subStoneFee);
+  if (!main && !sub) return null;
+  return `${main ?? "—"} / ${sub ?? "—"}`;
+}
+
 type FormState = {
   name: string;
   category: GpCategory;
@@ -406,10 +416,8 @@ export default function GpCatalogPage() {
                     {" · "}
                     {GP_CATEGORY_LABEL[p.category]}
                   </div>
-                  {p.mainStoneName || p.subStoneName ? (
-                    <div className="text-[12px] text-caption truncate">
-                      {[p.mainStoneName, p.subStoneName].filter(Boolean).join(" / ")}
-                    </div>
+                  {stoneText(p) ? (
+                    <div className="text-[12px] text-caption truncate">{stoneText(p)}</div>
                   ) : null}
                   <div className="text-[12px] text-body flex items-center gap-2">
                     <span>공임 {krw(p.defaultLaborFeeKrw)}</span>
@@ -483,9 +491,7 @@ export default function GpCatalogPage() {
                   <td className={td}>{GP_METAL_LABEL[p.metalType]}</td>
                   <td className={td}>{p.purityCode === "UNKNOWN" ? "미상" : p.purityCode}</td>
                   <td className={`${td} text-right tabular-nums`}>{gram(p.defaultWeightGram)}</td>
-                  <td className={td}>
-                    {[p.mainStoneName, p.subStoneName].filter(Boolean).join(" / ") || "—"}
-                  </td>
+                  <td className={td}>{stoneText(p) ?? "—"}</td>
                   <td className={`${td} text-right tabular-nums`}>{krw(p.defaultLaborFeeKrw)}</td>
                   <td className={`${td} text-right tabular-nums`}>
                     {p.effectiveHallmark.toFixed(3)}
