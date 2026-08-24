@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { CatalogIcon, ChevronRightIcon, StoreIcon, WholesaleIcon } from "@/components/icons";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
-import { isWholesaleTier } from "@/lib/session";
 
 /** 하단 탭바 "더보기" — 사이드바에서는 상시 노출되지만 탭바 4슬롯엔 못 들어가는 메뉴 모음. */
 export default function MorePage() {
-  const { account: session, logout } = useBizSession();
+  const { logout } = useBizSession();
 
   return (
     <div className="flex flex-col gap-5">
@@ -21,16 +20,14 @@ export default function MorePage() {
           <div className="flex-1 text-sm font-semibold">카탈로그 신청</div>
           <ChevronRightIcon className="w-4 h-4 text-caption" />
         </Link>
-        {isWholesaleTier(session.tier) && (
-          <Link
-            href="/wholesale"
-            className="flex items-center gap-3.5 px-4 md:px-5 py-3.5 border-t border-slate-100 hover:bg-slate-50"
-          >
-            <WholesaleIcon className="w-5 h-5 text-body" />
-            <div className="flex-1 text-sm font-semibold">도매 주문</div>
-            <ChevronRightIcon className="w-4 h-4 text-caption" />
-          </Link>
-        )}
+        <Link
+          href="/wholesale"
+          className="flex items-center gap-3.5 px-4 md:px-5 py-3.5 border-t border-slate-100 hover:bg-slate-50"
+        >
+          <WholesaleIcon className="w-5 h-5 text-body" />
+          <div className="flex-1 text-sm font-semibold">도매 주문</div>
+          <ChevronRightIcon className="w-4 h-4 text-caption" />
+        </Link>
         <Link
           href="/store-info"
           className="flex items-center gap-3.5 px-4 md:px-5 py-3.5 border-t border-slate-100 hover:bg-slate-50"

@@ -39,6 +39,8 @@ type ApiProduct = {
   stock: number;
   orderCount: number;
   createdAt: string;
+  /** true(NONE 등급 조회)면 unitPrice/laborFee 는 항상 0/null — 진짜 등급가가 아니다. */
+  priceLocked: boolean;
 };
 
 /** 카탈로그 상단 시세 띠 — 잠금이 아니라 현재값. 주문 시각에 다시 잠긴다. */
@@ -161,31 +163,136 @@ function pureLabel(metal: "GOLD" | "SILVER" | null): string {
 export default function WholesalePage() {
   const { account: session } = useBizSession();
 
-  // 등급 게이팅: 도매/도도매가 아니면 접근 안내만 렌더. 서버도 tier 를 재검증한다(프론트는 UX용).
+  /*
+   * 등급 분기(2026-08-12 결정): NONE 은 주문은 못 하지만 카탈로그는 보되 가격만 가린다.
+   * 실제 차단(주문 생성)은 서버가 한다 — 여기 분기는 화면 구성일 뿐이다.
+   */
   if (!isWholesaleTier(session.tier)) {
-    return <AccessNotice />;
+    return <NoneTierCatalog />;
   }
 
-  // 이 지점부터 tier는 WHOLESALE | SUPER_WHOLESALE 로 확정된다.
   return <WholesaleOrdering tier={session.tier as WholesaleTierValue} />;
 }
 
-/** 도매/도도매가 아닌 계정에 노출되는 접근 제한 안내. */
-function AccessNotice() {
+/**
+ * NONE(일반) 등급용 — 상품 열람 전용. 장바구니·주문·주문내역 없음, 가격은 서버가
+ * priceLocked=true 로 내려줘서(진짜 값 자체가 없음) 카드/상세 팝업이 CTA 로 대체한다.
+ */
+function NoneTierCatalog() {
+  const { token } = useBizSession();
+  const [category, setCategory] = useState<string>("전체");
+  const [detailProduct, setDetailProduct] = useState<ApiProduct | null>(null);
+  const [reloadCount, setReloadCount] = useState(0);
+  const requestKey = `wholesale-none:${reloadCount}`;
+  const [result, setResult] = useState<{
+    key: string;
+    products?: ApiProduct[];
+    spot?: ApiSpotBand;
+    error?: string;
+  } | null>(null);
+  const loading = result?.key !== requestKey;
+  const products = useMemo(() => (!loading ? (result?.products ?? []) : []), [loading, result]);
+  const spot = (!loading && result?.spot) || null;
+  const loadError = !loading ? (result?.error ?? null) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await bizApiFetch<{ products: ApiProduct[]; spot: ApiSpotBand }>(
+          "/biz/wholesale/products",
+          { token },
+        );
+        if (!cancelled) setResult({ key: requestKey, products: res.products, spot: res.spot });
+      } catch (error) {
+        if (!cancelled) {
+          setResult({
+            key: requestKey,
+            error: error instanceof BizApiError ? error.message : "도매 정보를 불러오지 못했습니다.",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestKey, token]);
+
+  const categories = useMemo(() => {
+    const set = new Set(products.map((p) => p.category));
+    return ["전체", ...Array.from(set)];
+  }, [products]);
+  const visibleProducts = useMemo(
+    () => (category === "전체" ? products : products.filter((p) => p.category === category)),
+    [category, products],
+  );
+
+  function refresh() {
+    setReloadCount((n) => n + 1);
+  }
+
   return (
-    <div className="flex-1 grid place-items-center">
-      <div className="w-full max-w-md bg-white border border-line rounded-3xl shadow-sm p-8 md:p-10 flex flex-col items-center gap-4 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-100 grid place-items-center text-primary">
-          <WholesaleIcon className="w-7 h-7" />
-        </div>
-        <h1 className="text-lg font-extrabold m-0">도매/도도매 등급 전용 화면입니다</h1>
-        <p className="text-sm text-caption leading-relaxed m-0">
-          도매 주문은 도매·도도매 등급 계정에서만 이용할 수 있습니다.
-          <br />
-          등급 전환은 담당 관리자에게 문의해 주세요.
-        </p>
+    <>
+      <div>
+        <h1 className="text-xl md:text-2xl font-extrabold tracking-tight m-0">도매 주문</h1>
+        <div className="text-sm text-caption mt-1.5">상품과 재고를 미리 볼 수 있습니다 · KST</div>
       </div>
-    </div>
+
+      <div className="bg-white border-2 border-orange-100 rounded-2xl shadow-sm px-4 md:px-5 py-3.5 flex items-center gap-3 flex-wrap">
+        <div className="w-10 h-10 rounded-xl bg-orange-50 grid place-items-center text-primary shrink-0">
+          <WholesaleIcon className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-sm font-extrabold">도매 등급 신청 안내</div>
+          <p className="text-xs text-caption leading-relaxed m-0">
+            등급가는 도매·도도매 등급 계정에만 열립니다. 담당 관리자에게 문의해 등급을 신청해주세요.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <ListSkeleton />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={refresh} />
+      ) : (
+        <>
+          <SpotBandStrip spot={spot} />
+
+          {categories.length > 2 ? (
+            <div className="flex gap-2 flex-wrap">
+              {categories.map((c) => (
+                <FilterChip key={c} active={category === c} onClick={() => setCategory(c)}>
+                  {c === "전체" ? "전체" : (CATEGORY_LABEL[c] ?? c)}
+                </FilterChip>
+              ))}
+            </div>
+          ) : null}
+
+          {visibleProducts.length === 0 ? (
+            <div className="bg-white border border-line rounded-3xl shadow-sm p-10 flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 grid place-items-center text-slate-400">
+                <GemIcon className="w-6 h-6" />
+              </div>
+              <div className="text-sm font-bold">등록된 상품이 없습니다</div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+              {visibleProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onOpenDetail={() => setDetailProduct(product)}
+                />
+              ))}
+            </div>
+          )}
+
+          {detailProduct ? (
+            <ProductDetailModal product={detailProduct} onClose={() => setDetailProduct(null)} />
+          ) : null}
+        </>
+      )}
+    </>
   );
 }
 
@@ -536,13 +643,15 @@ function ProductCard({
   onOpenDetail,
 }: {
   product: ApiProduct;
-  priceLabel: string;
-  inCart: number;
-  onAdd: (qty: number) => void;
+  /** priceLocked 상품은 안 쓰인다(NONE 등급 조회 — 등급가 자체가 없음). */
+  priceLabel?: string;
+  inCart?: number;
+  onAdd?: (qty: number) => void;
   onOpenDetail: () => void;
 }) {
   const [qty, setQty] = useState(1);
-  const spotLinked = product.pricingMode === "SPOT_LINKED";
+  const locked = product.priceLocked;
+  const spotLinked = !locked && product.pricingMode === "SPOT_LINKED";
   const blocked = product.priceUnavailableReason;
 
   return (
@@ -559,7 +668,7 @@ function ProductCard({
         ) : (
           <GemIcon className="w-11 h-11" />
         )}
-        {inCart > 0 && (
+        {(inCart ?? 0) > 0 && (
           <span className="absolute top-2.5 right-2.5 bg-primary text-white text-[11px] font-extrabold rounded-full px-2.5 py-1 shadow-md tabular-nums">
             담김 {inCart}개
           </span>
@@ -594,54 +703,65 @@ function ProductCard({
         )}
 
         <div className="mt-auto flex flex-col gap-2.5">
-          <div>
-            <div className="text-[11px] font-bold text-primary">
-              {priceLabel}
-              {spotLinked ? " · 시세 반영" : ""}
+          {locked ? (
+            <div className="bg-surface border border-line rounded-xl px-3 py-2.5 text-center">
+              <div className="text-sm font-extrabold text-primary">도매 등급 전용가</div>
+              <p className="text-[11px] text-caption leading-relaxed mt-0.5 m-0">
+                담당 관리자에게 문의해 등급을 신청해주세요.
+              </p>
             </div>
-            <div className="text-lg font-extrabold tabular-nums">
-              {blocked ? (
-                <span className="text-sm font-bold text-caption">가격 산출 불가</span>
-              ) : (
-                <>
-                  {product.unitPrice.toLocaleString("ko-KR")}
-                  <span className="text-xs font-semibold text-caption">원</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {blocked ? (
-            <p className="text-[11px] leading-relaxed text-red-600 font-medium m-0">{blocked}</p>
           ) : (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  aria-label="수량 줄이기"
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  disabled={qty <= 1}
-                  className="w-9 h-10 rounded-l-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition disabled:opacity-40"
-                >
-                  <MinusIcon className="w-4 h-4" />
-                </button>
-                <div className="w-11 h-10 border-y border-line bg-white grid place-items-center text-sm font-extrabold tabular-nums">
-                  {qty}
+            <>
+              <div>
+                <div className="text-[11px] font-bold text-primary">
+                  {priceLabel}
+                  {spotLinked ? " · 시세 반영" : ""}
                 </div>
-                <button
-                  aria-label="수량 늘리기"
-                  onClick={() => setQty((q) => Math.min(9999, q + 1))}
-                  className="w-9 h-10 rounded-r-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition"
-                >
-                  <PlusIcon className="w-4 h-4" />
-                </button>
+                <div className="text-lg font-extrabold tabular-nums">
+                  {blocked ? (
+                    <span className="text-sm font-bold text-caption">가격 산출 불가</span>
+                  ) : (
+                    <>
+                      {product.unitPrice.toLocaleString("ko-KR")}
+                      <span className="text-xs font-semibold text-caption">원</span>
+                    </>
+                  )}
+                </div>
               </div>
-              <button
-                onClick={() => onAdd(qty)}
-                className="flex-1 h-10 px-4 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-bold transition"
-              >
-                담기
-              </button>
-            </div>
+
+              {blocked ? (
+                <p className="text-[11px] leading-relaxed text-red-600 font-medium m-0">{blocked}</p>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      aria-label="수량 줄이기"
+                      onClick={() => setQty((q) => Math.max(1, q - 1))}
+                      disabled={qty <= 1}
+                      className="w-9 h-10 rounded-l-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition disabled:opacity-40"
+                    >
+                      <MinusIcon className="w-4 h-4" />
+                    </button>
+                    <div className="w-11 h-10 border-y border-line bg-white grid place-items-center text-sm font-extrabold tabular-nums">
+                      {qty}
+                    </div>
+                    <button
+                      aria-label="수량 늘리기"
+                      onClick={() => setQty((q) => Math.min(9999, q + 1))}
+                      className="w-9 h-10 rounded-r-xl border border-line bg-white grid place-items-center text-body hover:border-primary-light hover:text-primary transition"
+                    >
+                      <PlusIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => onAdd?.(qty)}
+                    className="flex-1 h-10 px-4 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-bold transition"
+                  >
+                    담기
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -656,10 +776,12 @@ function ProductDetailModal({
   onClose,
 }: {
   product: ApiProduct;
-  priceLabel: string;
+  /** priceLocked 상품은 안 쓰인다. */
+  priceLabel?: string;
   onClose: () => void;
 }) {
-  const spotLinked = product.pricingMode === "SPOT_LINKED";
+  const locked = product.priceLocked;
+  const spotLinked = !locked && product.pricingMode === "SPOT_LINKED";
   const blocked = product.priceUnavailableReason;
 
   return (
@@ -711,11 +833,20 @@ function ProductDetailModal({
               <DetailRow label="공임" value={product.laborFee != null ? won(product.laborFee) : "—"} />
             </>
           ) : null}
-          <DetailRow
-            label={`${priceLabel}${spotLinked ? "(시세 반영)" : ""}`}
-            value={blocked ? "가격 산출 불가" : won(product.unitPrice)}
-            emphasize
-          />
+          {locked ? (
+            <div className="bg-surface border border-line rounded-xl px-3.5 py-3 text-center">
+              <div className="text-sm font-extrabold text-primary">도매 등급 전용가</div>
+              <p className="text-xs text-caption leading-relaxed mt-1 m-0">
+                담당 관리자에게 문의해 등급을 신청해주세요.
+              </p>
+            </div>
+          ) : (
+            <DetailRow
+              label={`${priceLabel}${spotLinked ? "(시세 반영)" : ""}`}
+              value={blocked ? "가격 산출 불가" : won(product.unitPrice)}
+              emphasize
+            />
+          )}
           <DetailRow label="재고" value={`${product.stock.toLocaleString("ko-KR")}개`} />
           <DetailRow label="발주된 횟수" value={`${product.orderCount.toLocaleString("ko-KR")}회`} />
           <DetailRow label="등록일" value={kstDateLabel(product.createdAt)} />

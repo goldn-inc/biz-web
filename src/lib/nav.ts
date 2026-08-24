@@ -13,7 +13,6 @@ export type NavItem = {
   href: string;
   label: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
-  tierOnly?: boolean;
 };
 
 /**
@@ -32,14 +31,17 @@ export function isLockedRoute(pathname: string): boolean {
 const withLockdown = (items: NavItem[]) =>
   NAV_LOCKDOWN ? items.filter((item) => !LOCKED_ROUTES.includes(item.href)) : items;
 
-/** 사이드바(lg+) 전용 항목 순서. 도매 주문은 tierOnly — NONE 계정에는 렌더하지 않음. */
+/**
+ * 사이드바(lg+) 전용 항목 순서. 도매 주문은 모든 등급에 노출된다(2026-08-12 결정) —
+ * NONE 등급은 들어가면 상품은 보이되 가격이 가려지고 "등급 신청" CTA 로 안내된다.
+ */
 export const SIDEBAR_NAV: NavItem[] = withLockdown([
   { href: "/dashboard", label: "홈", icon: HomeIcon },
   { href: "/reservations", label: "예약", icon: CalendarIcon },
   { href: "/transactions", label: "거래", icon: ScaleIcon },
   { href: "/coupons", label: "쿠폰", icon: TicketIcon },
   { href: "/catalog", label: "카탈로그 신청", icon: CatalogIcon },
-  { href: "/wholesale", label: "도매 주문", icon: WholesaleIcon, tierOnly: true },
+  { href: "/wholesale", label: "도매 주문", icon: WholesaleIcon },
   { href: "/gp", label: "매장 프로그램", icon: StoreIcon },
 ]);
 

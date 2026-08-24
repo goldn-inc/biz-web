@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { SIDEBAR_NAV } from "@/lib/nav";
-import { BizTier, isWholesaleTier, tierLabel } from "@/lib/session";
+import { BizTier, tierLabel } from "@/lib/session";
 
 type SidebarProps = {
   storeName: string;
@@ -15,7 +15,7 @@ type SidebarProps = {
 export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
   const pathname = usePathname();
   const reduced = Boolean(useReducedMotion());
-  const items = SIDEBAR_NAV.filter((item) => !item.tierOnly || isWholesaleTier(tier));
+  const items = SIDEBAR_NAV;
   // 활성 항목 하이라이트가 메뉴 사이를 미끄러져 이동 — reduced-motion이면 즉시 전환
   const pill: Transition = reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 40 };
 
@@ -59,11 +59,6 @@ export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
             )}
             <Icon className="relative w-5 h-5 transition-transform duration-150 group-hover:scale-110" />
             <span className="relative">{item.label}</span>
-            {item.tierOnly && (
-              <span className="relative ml-auto text-[10px] font-bold text-primary bg-orange-50 border border-orange-100 rounded-full px-2 py-0.5">
-                {tier === "SUPER_WHOLESALE" ? "도도매" : "도매"}
-              </span>
-            )}
           </Link>
           </motion.div>
         );
