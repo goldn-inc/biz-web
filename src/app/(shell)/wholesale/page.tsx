@@ -36,6 +36,9 @@ type ApiProduct = {
   laborFee: number | null;
   /** 값이 있으면 주문할 수 없다(공임 미설정·순도 미상·시세 없음). */
   priceUnavailableReason: string | null;
+  stock: number;
+  orderCount: number;
+  createdAt: string;
 };
 
 /** 카탈로그 상단 시세 띠 — 잠금이 아니라 현재값. 주문 시각에 다시 잠긴다. */
@@ -222,6 +225,7 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
   const [category, setCategory] = useState<string>("전체");
   const [view, setView] = useState<View>({ kind: "list" });
   const [cart, setCart] = useState<Cart>({});
+  const [detailProduct, setDetailProduct] = useState<ApiProduct | null>(null);
 
   // 로딩은 "요청 키 ↔ 결과 키 불일치"로 파생(set-state-in-effect 회피, 거래 화면과 동일 패턴)
   const [reloadCount, setReloadCount] = useState(0);
@@ -421,10 +425,19 @@ function WholesaleOrdering({ tier }: { tier: WholesaleTierValue }) {
                   priceLabel={meta.priceLabel}
                   inCart={cart[product.id] ?? 0}
                   onAdd={(qty) => addToCart(product.id, qty)}
+                  onOpenDetail={() => setDetailProduct(product)}
                 />
               ))}
             </div>
           )}
+
+          {detailProduct ? (
+            <ProductDetailModal
+              product={detailProduct}
+              priceLabel={meta.priceLabel}
+              onClose={() => setDetailProduct(null)}
+            />
+          ) : null}
 
           <CartBar
             lineCount={cartLines.length}
@@ -520,11 +533,13 @@ function ProductCard({
   priceLabel,
   inCart,
   onAdd,
+  onOpenDetail,
 }: {
   product: ApiProduct;
   priceLabel: string;
   inCart: number;
   onAdd: (qty: number) => void;
+  onOpenDetail: () => void;
 }) {
   const [qty, setQty] = useState(1);
   const spotLinked = product.pricingMode === "SPOT_LINKED";
@@ -532,7 +547,12 @@ function ProductCard({
 
   return (
     <div className="bg-white border border-line rounded-3xl shadow-sm overflow-hidden flex flex-col">
-      <div className="relative aspect-[4/3] bg-amber-100/60 grid place-items-center text-amber-600/50 overflow-hidden">
+      <button
+        type="button"
+        onClick={onOpenDetail}
+        title="상세 보기"
+        className="relative aspect-[4/3] bg-amber-100/60 grid place-items-center text-amber-600/50 overflow-hidden w-full"
+      >
         {product.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- 외부(R2) 이미지, 크기 미고정
           <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
@@ -544,14 +564,16 @@ function ProductCard({
             담김 {inCart}개
           </span>
         )}
-      </div>
+      </button>
       <div className="p-4 flex flex-col gap-2.5 flex-1">
-        <div>
-          <div className="text-sm font-extrabold leading-snug">{product.name}</div>
+        <button type="button" onClick={onOpenDetail} className="text-left">
+          <div className="text-sm font-extrabold leading-snug hover:text-primary transition">
+            {product.name}
+          </div>
           <div className="text-xs text-caption mt-0.5">
             {(CATEGORY_LABEL[product.category] ?? product.category) + " · " + specOf(product)}
           </div>
-        </div>
+        </button>
 
         {/* 시세 연동 상품은 "안 바뀌는 값"을 먼저 보여준다 — 금액은 시세를 대입한 결과일 뿐이다. */}
         {spotLinked && (
@@ -623,6 +645,117 @@ function ProductCard({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 상품 상세 팝업 — 카드 클릭 시. 사진 1장(products.image_url 은 배열이 아니다) + 정보표. */
+function ProductDetailModal({
+  product,
+  priceLabel,
+  onClose,
+}: {
+  product: ApiProduct;
+  priceLabel: string;
+  onClose: () => void;
+}) {
+  const spotLinked = product.pricingMode === "SPOT_LINKED";
+  const blocked = product.priceUnavailableReason;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-black/30 flex items-center justify-center p-4"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl border border-line shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-line">
+          <h2 className="text-sm font-extrabold truncate">{product.name}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="text-caption hover:text-ink px-1 shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="aspect-[4/3] bg-amber-100/60 grid place-items-center text-amber-600/50 overflow-hidden">
+          {product.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- 외부(R2) 이미지, 크기 미고정
+            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+          ) : (
+            <GemIcon className="w-14 h-14" />
+          )}
+        </div>
+
+        <div className="p-5 flex flex-col gap-3 text-sm">
+          <DetailRow label="분류" value={CATEGORY_LABEL[product.category] ?? product.category} />
+          <DetailRow
+            label="재질 / 순도"
+            value={`${pureLabel(product.metalType)} · ${product.purityCode}`}
+          />
+          <DetailRow
+            label="중량"
+            value={product.weightGram != null ? gram(product.weightGram) : "—"}
+          />
+          {spotLinked ? (
+            <>
+              <DetailRow
+                label={`${pureLabel(product.metalType)} 순중량`}
+                value={product.pureGram != null ? gram(product.pureGram) : "—"}
+              />
+              <DetailRow label="공임" value={product.laborFee != null ? won(product.laborFee) : "—"} />
+            </>
+          ) : null}
+          <DetailRow
+            label={`${priceLabel}${spotLinked ? "(시세 반영)" : ""}`}
+            value={blocked ? "가격 산출 불가" : won(product.unitPrice)}
+            emphasize
+          />
+          <DetailRow label="재고" value={`${product.stock.toLocaleString("ko-KR")}개`} />
+          <DetailRow label="발주된 횟수" value={`${product.orderCount.toLocaleString("ko-KR")}회`} />
+          <DetailRow label="등록일" value={kstDateLabel(product.createdAt)} />
+          {blocked ? <p className="text-xs text-red-600 font-medium m-0">{blocked}</p> : null}
+        </div>
+
+        <div className="px-5 pb-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full h-11 rounded-xl border border-line text-body text-sm font-semibold hover:bg-surface transition"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 상세 팝업의 라벨/값 한 줄. */
+function DetailRow({
+  label,
+  value,
+  emphasize,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-caption text-xs shrink-0">{label}</span>
+      <span
+        className={`tabular-nums text-right ${
+          emphasize ? "text-base font-extrabold text-primary" : "text-sm font-semibold"
+        }`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
