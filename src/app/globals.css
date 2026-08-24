@@ -41,14 +41,20 @@ select:focus-visible {
   outline: none;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+/* a/button 리셋은 @layer base 안에 둬야 한다 — Tailwind v4 는 @import "tailwindcss" 로
+   theme/base/components/utilities 레이어를 자동 생성하는데, 레이어 밖 스타일은 명시도와
+   무관하게 레이어 안 스타일(예: text-white 같은 유틸리티)을 항상 이겨버린다. 레이어 밖에
+   그대로 두면 <Link>/<a> 에 준 text-* 유틸리티가 이 color:inherit 에 조용히 묻힌다. */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 
-button {
-  cursor: pointer;
-  font-family: inherit;
+  button {
+    cursor: pointer;
+    font-family: inherit;
+  }
 }
 
 /* 온보딩 슬라이드 keyframe(ob-up·ob-pop·.slide·.anim-*·.d1~d4)은 제거했다 —
