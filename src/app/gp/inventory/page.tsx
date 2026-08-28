@@ -59,22 +59,23 @@ export default function GpInventoryPage() {
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [groupByModel, setGroupByModel] = useState(false);
+  const [reloadCount, setReloadCount] = useState(0);
   /**
    * 개체는 판매돼도 SOLD 로 남아 계속 쌓인다 — 「전체」 조회는 재고 수백 개인 매장에서도
-   * 몇 년이면 만 단위가 된다. 서버 기본 200행을 받고 「더 보기」로 늘린다.
-   * 선택 행과 같은 key 파생 방식 — 필터가 바뀌면 늘려둔 크기가 저절로 원위치한다.
+   * 몇 년이면 만 단위가 된다. 서버 기본 200행을 받고 「더 보기」로 **뒤를 이어 붙인다.**
+   * (예전에는 limit 을 200씩 키워 전체를 다시 받았는데, 세 번째 클릭이 서버 상한 500 을
+   * 넘겨 400 으로 떨어지면서 이미 그려진 행까지 사라졌다.)
    */
-  const [limitState, setLimitState] = useState<{ key: string; value: number }>({
-    key: "",
-    value: PAGE_SIZE,
-  });
-
-  const [reloadCount, setReloadCount] = useState(0);
   const [result, setResult] = useState<{
     key: string;
     data?: GpItemListResponse;
     error?: string;
   } | null>(null);
+  /** 「더 보기」 실패 — 이미 그려진 행은 그대로 두고 이 문구만 띄운다. */
+  const [moreErrorState, setMoreErrorState] = useState<{ key: string; message: string } | null>(
+    null,
+  );
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [suppliers, setSuppliers] = useState<GpSupplier[]>([]);
   const [products, setProducts] = useState<GpProductLite[]>([]);
@@ -96,24 +97,79 @@ export default function GpInventoryPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  /** 필터 축만 모은 키 — 필터가 바뀌면 「더 보기」로 늘려둔 페이지 크기를 원위치시킨다. */
+  /** 필터 축만 모은 키 — 필터가 바뀌면 「더 보기」로 이어 붙인 것을 버리고 처음부터 받는다. */
   const filterKey = [status, metal, purity, category, acquireType, supplierId, q, groupByModel].join(
     "|",
   );
-  const limit = limitState.key === filterKey ? limitState.value : PAGE_SIZE;
-  const showMore = useCallback(
-    () => setLimitState({ key: filterKey, value: limit + PAGE_SIZE }),
-    [filterKey, limit],
-  );
 
-  const requestKey = [filterKey, limit, reloadCount].join("|");
+  /**
+   * 요청 키에 페이지를 넣지 않는다 — 「더 보기」는 뒤를 이어 붙일 뿐 다른 요청이 아니다.
+   * 넣으면 더 볼 때마다 선택 행이 첫 줄로 튄다.
+   */
+  const requestKey = [filterKey, reloadCount].join("|");
+
+  /**
+   * 필터를 쿼리스트링으로. 묶어보기는 행이 개체 수가 아니라 **모델 수**라 SOLD 가 쌓여도
+   * 늘지 않는다 — 그래서 묶어보기에만 페이지가 없다(여기만 limit 을 안 붙이는 이유).
+   */
+  const buildParams = useCallback(
+    (offset: number) => {
+      const params = new URLSearchParams();
+      params.set("status", status);
+      if (metal) params.set("metal", metal);
+      if (purity) params.set("purity", purity);
+      if (category) params.set("category", category);
+      if (acquireType) params.set("acquireType", acquireType);
+      if (supplierId) params.set("supplierId", supplierId);
+      if (q) params.set("q", q);
+      if (groupByModel) {
+        params.set("groupByModel", "true");
+      } else {
+        params.set("limit", String(PAGE_SIZE));
+        if (offset > 0) params.set("offset", String(offset));
+      }
+      return params;
+    },
+    [status, metal, purity, category, acquireType, supplierId, q, groupByModel],
+  );
   const loading = result?.key !== requestKey;
   const data = !loading ? result?.data : undefined;
   const loadError = !loading ? (result?.error ?? null) : null;
+  const moreError = moreErrorState?.key === requestKey ? moreErrorState.message : null;
   const rows: GpItem[] = useMemo(() => data?.items ?? [], [data]);
   const groups = useMemo(() => data?.groups ?? [], [data]);
   const summary = data?.summary;
   const rowCount = groupByModel ? groups.length : rows.length;
+
+  /** 「더 보기」 — 전체를 다시 받지 않고 offset 뒤만 이어 붙인다. 실패해도 기존 행은 남긴다. */
+  const showMore = useCallback(() => {
+    if (!data?.hasMore || loadingMore) return;
+    const key = requestKey;
+    const offset = rows.length;
+    setLoadingMore(true);
+    setMoreErrorState(null);
+    void (async () => {
+      try {
+        const res = await bizApiFetch<GpItemListResponse>(
+          `/biz/gp/items?${buildParams(offset).toString()}`,
+          { token },
+        );
+        // 이어 붙이는 동안 필터가 바뀌었으면 버린다 — 다른 필터의 개체가 섞이면 안 된다.
+        setResult((cur) =>
+          cur?.key === key && cur.data
+            ? { key, data: { ...res, items: [...cur.data.items, ...res.items] } }
+            : cur,
+        );
+      } catch (error) {
+        setMoreErrorState({
+          key,
+          message: error instanceof BizApiError ? error.message : "더 불러오지 못했습니다.",
+        });
+      } finally {
+        setLoadingMore(false);
+      }
+    })();
+  }, [data, loadingMore, requestKey, rows.length, buildParams, token]);
 
   const selectedIndex = selection.key === requestKey ? selection.index : 0;
   const setSelectedIndex = useCallback(
@@ -128,21 +184,12 @@ export default function GpInventoryPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const params = new URLSearchParams();
-    params.set("status", status);
-    if (metal) params.set("metal", metal);
-    if (purity) params.set("purity", purity);
-    if (category) params.set("category", category);
-    if (acquireType) params.set("acquireType", acquireType);
-    if (supplierId) params.set("supplierId", supplierId);
-    if (q) params.set("q", q);
-    if (groupByModel) params.set("groupByModel", "true");
-    else params.set("limit", String(limit));
     void (async () => {
       try {
-        const res = await bizApiFetch<GpItemListResponse>(`/biz/gp/items?${params.toString()}`, {
-          token,
-        });
+        const res = await bizApiFetch<GpItemListResponse>(
+          `/biz/gp/items?${buildParams(0).toString()}`,
+          { token },
+        );
         if (!cancelled) setResult({ key: requestKey, data: res });
       } catch (error) {
         if (!cancelled) {
@@ -156,20 +203,7 @@ export default function GpInventoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    status,
-    metal,
-    purity,
-    category,
-    acquireType,
-    supplierId,
-    q,
-    groupByModel,
-    limit,
-    reloadCount,
-    requestKey,
-    token,
-  ]);
+  }, [buildParams, requestKey, token]);
 
   /** 폼 드롭다운 데이터 — 화면 진입·등록 후에만 갱신하면 충분하다. */
   const loadFormData = useCallback(() => {
@@ -609,7 +643,7 @@ export default function GpInventoryPage() {
                 환산 불가 {summary.unconvertibleCount}건
               </span>
             ) : null}
-            {!groupByModel && data?.hasMore ? (
+            {!groupByModel && data && (data.hasMore || moreError) ? (
               <>
                 <span className="text-caption tabular-nums">
                   {rows.length.toLocaleString()} / {(data.total ?? 0).toLocaleString()} 표시
@@ -617,10 +651,12 @@ export default function GpInventoryPage() {
                 <button
                   type="button"
                   onClick={showMore}
-                  className="h-6 px-2 rounded border border-line bg-white font-semibold hover:bg-surface"
+                  disabled={loadingMore}
+                  className="h-6 px-2 rounded border border-line bg-white font-semibold hover:bg-surface disabled:opacity-50"
                 >
-                  더 보기
+                  {loadingMore ? "불러오는 중…" : "더 보기"}
                 </button>
+                {moreError ? <span className="text-red-600">{moreError}</span> : null}
               </>
             ) : null}
           </>

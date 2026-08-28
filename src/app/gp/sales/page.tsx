@@ -16,6 +16,9 @@ import {
 
 const dd = "h-8 px-2 rounded-md border border-line bg-white text-[13px]";
 
+/** 한 번에 받는 판매 수 — 서버 기본값과 같게 둔다(백엔드 DEFAULT_SALE_PAGE_SIZE). */
+const PAGE_SIZE = 100;
+
 /** KST 기준 날짜 문자열(YYYY-MM-DD). offsetDays 만큼 이동. */
 function kstDateStr(base: Date, offsetDays = 0): string {
   const kst = new Date(base.getTime() + 9 * 3600 * 1000 + offsetDays * 86400 * 1000);
@@ -53,22 +56,44 @@ export default function GpSalesHistoryPage() {
   const [q, setQ] = useState("");
   const [reload, setReload] = useState(0);
 
-  const [data, setData] = useState<GpSaleListResponse | null>(null);
+  /**
+   * 판매는 팔수록 쌓이기만 한다 — 기간을 넓게 잡으면 수백·수천 건이 된다.
+   * 서버 기본 100건을 받고 「더 보기」로 이어 붙인다. 필터 축을 키로 달아 두면
+   * 기간·취소표시가 바뀔 때 누적이 저절로 버려진다(재고 화면과 같은 방식).
+   */
+  const [data, setData] = useState<{ key: string; res: GpSaleListResponse } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** 「더 보기」 실패 — 이미 그려진 행은 그대로 두고 이 문구만 띄운다. */
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [returnDraft, setReturnDraft] = useState<ReturnDraft | null>(null);
   const [statement, setStatement] = useState<GpSale | null>(null);
 
+  /** 필터 축만 모은 키 — 이게 바뀌면 누적을 버리고 처음부터 다시 받는다. */
+  const filterKey = [from, to, showCanceled ? "ALL" : "COMPLETED", reload].join("|");
+
+  const buildParams = useCallback(
+    (offset: number) => {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      params.set("status", showCanceled ? "ALL" : "COMPLETED");
+      params.set("limit", String(PAGE_SIZE));
+      if (offset > 0) params.set("offset", String(offset));
+      return params;
+    },
+    [from, to, showCanceled],
+  );
+
   useEffect(() => {
     let cancelled = false;
-    const params = new URLSearchParams();
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    params.set("status", showCanceled ? "ALL" : "COMPLETED");
-    void bizApiFetch<GpSaleListResponse>(`/biz/gp/sales?${params.toString()}`, { token })
+    const key = filterKey;
+    setMoreError(null);
+    void bizApiFetch<GpSaleListResponse>(`/biz/gp/sales?${buildParams(0).toString()}`, { token })
       .then((r) => {
         if (!cancelled) {
-          setData(r);
+          setData({ key, res: r });
           setLoadError(null);
         }
       })
@@ -82,10 +107,36 @@ export default function GpSalesHistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, from, to, showCanceled, reload]);
+  }, [token, filterKey, buildParams]);
+
+  /** 로드된 응답 — 필터가 막 바뀐 순간에는 옛 응답을 쓰지 않는다. */
+  const loaded = data?.key === filterKey ? data.res : null;
+
+  const loadMore = useCallback(() => {
+    if (!loaded?.hasMore || loadingMore) return;
+    const key = filterKey;
+    const offset = loaded.sales.length;
+    setLoadingMore(true);
+    setMoreError(null);
+    void bizApiFetch<GpSaleListResponse>(`/biz/gp/sales?${buildParams(offset).toString()}`, {
+      token,
+    })
+      .then((r) => {
+        // 이어 붙이는 동안 필터가 바뀌었으면 버린다 — 다른 기간의 행이 섞이면 안 된다.
+        setData((cur) =>
+          cur?.key === key ? { key, res: { ...r, sales: [...cur.res.sales, ...r.sales] } } : cur,
+        );
+      })
+      .catch((error) => {
+        setMoreError(
+          error instanceof BizApiError ? error.message : "더 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => setLoadingMore(false));
+  }, [loaded, loadingMore, filterKey, buildParams, token]);
 
   const sales = useMemo(() => {
-    const all = data?.sales ?? [];
+    const all = loaded?.sales ?? [];
     if (!q.trim()) return all;
     const needle = q.trim().toLowerCase();
     return all.filter(
@@ -99,9 +150,9 @@ export default function GpSalesHistoryPage() {
             l.name.toLowerCase().includes(needle),
         ),
     );
-  }, [data, q]);
+  }, [loaded, q]);
 
-  const summary: GpSalesPeriodSummary | undefined = data?.summary;
+  const summary: GpSalesPeriodSummary | undefined = loaded?.summary;
 
   /** 반품 모달 열기 — 환불 프리필은 현금 우선(§8.3: 실무에서 환불은 현금이 기본). */
   const openReturn = useCallback((sale: GpSale) => {
@@ -203,7 +254,7 @@ export default function GpSalesHistoryPage() {
         <div className="flex items-center gap-2 mb-2">
           <h1 className="text-[15px] font-extrabold">판매 내역</h1>
           <span className="text-caption text-[12px]">
-            {data === null ? "불러오는 중…" : `${sales.length.toLocaleString()}건`}
+            {loaded === null ? "불러오는 중…" : `${loaded.total.toLocaleString()}건`}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
             <button
@@ -267,9 +318,16 @@ export default function GpSalesHistoryPage() {
       <div className="flex-1 overflow-auto bg-white">
         {loadError ? (
           <div className="p-6 text-center text-red-600">{loadError}</div>
-        ) : data !== null && sales.length === 0 ? (
+        ) : loaded !== null && sales.length === 0 ? (
           <div className="p-10 text-center text-caption">
-            기간 내 판매가 없습니다. 판매 등록에서 첫 판매를 올리세요.
+            {q.trim() && loaded.sales.length > 0 ? (
+              <>
+                불러온 {loaded.sales.length.toLocaleString()}건 안에는 없습니다.
+                {loaded.hasMore ? " 「더 보기」로 더 불러오면 나올 수 있습니다." : ""}
+              </>
+            ) : (
+              "기간 내 판매가 없습니다. 판매 등록에서 첫 판매를 올리세요."
+            )}
           </div>
         ) : (
           <table className="w-full border-collapse">
@@ -341,6 +399,22 @@ export default function GpSalesHistoryPage() {
                 {krw(summary.marginTotal)}
               </b>
             </span>
+            {loaded && (loaded.hasMore || moreError) ? (
+              <span className="flex items-center gap-1.5">
+                <span className="text-caption tabular-nums">
+                  {loaded.sales.length.toLocaleString()} / {loaded.total.toLocaleString()} 표시
+                </span>
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="h-6 px-2 rounded border border-line bg-white font-semibold hover:bg-surface disabled:opacity-50"
+                >
+                  {loadingMore ? "불러오는 중…" : "더 보기"}
+                </button>
+                {moreError ? <span className="text-red-600">{moreError}</span> : null}
+              </span>
+            ) : null}
           </>
         ) : (
           <span className="text-caption">합계 계산 중…</span>

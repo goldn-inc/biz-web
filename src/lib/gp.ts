@@ -522,7 +522,10 @@ export type GpSalesPeriodSummary = {
 
 export type GpSaleListResponse = {
   sales: GpSale[];
+  /** 기간 전체 기준 — 목록이 페이지로 잘려도 이 숫자는 흔들리지 않는다. */
   summary: GpSalesPeriodSummary;
+  total: number;
+  hasMore: boolean;
 };
 
 /** 재질(순도)별 통계 한 줄 — 골드펜 재고조사 통계 2표 대응(§8.0 #4). */
