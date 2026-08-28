@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, useReducedMotion, type Transition } from "motion/react";
+import { motion, type Transition } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 import { SIDEBAR_NAV } from "@/lib/nav";
 import { BizTier, tierLabel } from "@/lib/session";
 
@@ -14,7 +15,7 @@ type SidebarProps = {
 
 export function Sidebar({ storeName, tier, onLogout }: SidebarProps) {
   const pathname = usePathname();
-  const reduced = Boolean(useReducedMotion());
+  const reduced = Boolean(useReducedMotionSafe());
   const items = SIDEBAR_NAV;
   // 활성 항목 하이라이트가 메뉴 사이를 미끄러져 이동 — reduced-motion이면 즉시 전환
   const pill: Transition = reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 40 };

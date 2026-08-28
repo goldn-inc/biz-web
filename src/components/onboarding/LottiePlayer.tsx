@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useReducedMotion } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 import type { AnimationItem } from "lottie-web";
 
 /**
@@ -24,7 +24,7 @@ export function LottiePlayer({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<AnimationItem | null>(null);
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotionSafe();
 
   useEffect(() => {
     let disposed = false;

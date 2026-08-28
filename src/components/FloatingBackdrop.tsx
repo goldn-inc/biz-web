@@ -1,6 +1,7 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 
 /** 오브 1개 정의 — 위치는 %(뷰포트 기준), 크기 px, 표류 폭 px. */
 type OrbDef = {
@@ -37,7 +38,7 @@ const SPARKLES: { glyph: string; left: string; top: string; size: number; durati
  * 부모에 `relative isolate overflow-hidden` 필요. reduced-motion이면 정적 렌더.
  */
 export function FloatingBackdrop() {
-  const reduced = Boolean(useReducedMotion());
+  const reduced = Boolean(useReducedMotionSafe());
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">

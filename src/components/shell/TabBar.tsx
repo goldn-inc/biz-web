@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, useReducedMotion, type Transition } from "motion/react";
+import { motion, type Transition } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 import { ComponentType, SVGProps } from "react";
 import { TABBAR_NAV } from "@/lib/nav";
 import { MoreIcon } from "@/components/icons";
@@ -45,7 +46,7 @@ function TabItem({
 
 export function TabBar() {
   const pathname = usePathname();
-  const reduced = Boolean(useReducedMotion());
+  const reduced = Boolean(useReducedMotionSafe());
   const spring: Transition = reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 32 };
   const moreActive =
     pathname.startsWith("/more") || pathname.startsWith("/catalog") || pathname.startsWith("/wholesale");

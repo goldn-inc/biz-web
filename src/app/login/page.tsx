@@ -2,7 +2,8 @@
 
 import { FormEvent, Suspense, useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, useAnimationControls, useReducedMotion } from "motion/react";
+import { motion, useAnimationControls } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import { isWholesaleTier, saveBizSession, type BizAccount } from "@/lib/session";
 import { FloatingBackdrop } from "@/components/FloatingBackdrop";
@@ -28,7 +29,7 @@ export default function LoginPage() {
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const reduced = Boolean(useReducedMotion());
+  const reduced = Boolean(useReducedMotionSafe());
   // 세션 가드가 붙여 보낸 원래 목적지(?next=/gp/…) — 내부 경로만 신뢰한다(오픈 리다이렉트 방지)
   const rawNext = params.get("next");
   const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : null;

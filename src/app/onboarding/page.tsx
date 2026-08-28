@@ -2,7 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, useReducedMotion, type PanInfo } from "motion/react";
+import { motion, type PanInfo } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 import { FloatingBackdrop } from "@/components/FloatingBackdrop";
 import { DUR, EASE, SPRING } from "@/lib/motion";
 import {
@@ -70,7 +71,7 @@ const RISE = {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const reduced = Boolean(useReducedMotion());
+  const reduced = Boolean(useReducedMotionSafe());
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const isLast = index === N - 1;

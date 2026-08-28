@@ -5,10 +5,10 @@ import {
   animate,
   motion,
   useMotionValue,
-  useReducedMotion,
-  useTransform,
+    useTransform,
   type MotionValue,
 } from "motion/react";
+import { useReducedMotionSafe } from "@/lib/reduced-motion";
 import { LottiePlayer } from "./LottiePlayer";
 
 /**
@@ -34,7 +34,7 @@ const OFF_TEXT = "#cccccc";
 
 /** 0→100 을 선형으로 무한 반복. 비활성 슬라이드는 0 에 세워두고, 동작 줄이기면 완료 상태로 정지. */
 function useCycle(active: boolean, durationMs: number = LOOP_MS): MotionValue<number> {
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotionSafe();
   const t = useMotionValue(reduce ? 100 : 0);
 
   useEffect(() => {
