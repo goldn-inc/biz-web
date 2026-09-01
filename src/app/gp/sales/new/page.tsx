@@ -107,6 +107,9 @@ export default function GpSalesNewPage() {
     [token],
   );
 
+  /** 이 화면의 한 번의 「등록」에 대한 멱등 키 — 성공하면 새로 뽑는다. */
+  const submitKeyRef = useRef<string>(crypto.randomUUID());
+
   const submit = useCallback(async () => {
     if (!balanced || submitting) return;
     setSubmitting(true);
@@ -115,6 +118,10 @@ export default function GpSalesNewPage() {
       const sale = await bizApiFetch<SaleResult>("/biz/gp/sales", {
         method: "POST",
         token,
+        // 더블탭이 판매·현금·금 원장을 각각 두 벌 남긴다 — 개체 라인은 IN_STOCK 조건부
+        // UPDATE 가 막지만 비개체 라인에는 그 앵커가 없다. 이 화면에서 한 번 만든 키를
+        // 재시도에도 그대로 써서 서버가 같은 요청임을 알아보게 한다.
+        idempotencyKey: submitKeyRef.current,
         body: {
           lines: lines.map((l) =>
             l.kind === "item"

@@ -51,6 +51,11 @@ type FetchOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   token?: string | null;
+  /**
+   * 같은 요청을 두 번 보내도 한 번만 처리되게 하는 키. 서버의 `@Idempotent` 는 이 헤더가
+   * 있을 때만 작동한다 — 더블탭이 원장을 두 벌 남기는 자리에서 호출부가 준다.
+   */
+  idempotencyKey?: string;
 };
 
 /**
@@ -116,7 +121,7 @@ export async function bizApiDownload(
 }
 
 export async function bizApiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const { method = "GET", body, token } = options;
+  const { method = "GET", body, token, idempotencyKey } = options;
 
   let response: Response;
   try {
@@ -125,6 +130,9 @@ export async function bizApiFetch<T>(path: string, options: FetchOptions = {}): 
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // 서버의 @Idempotent 는 이 헤더가 있을 때만 작동한다 — 없으면 그냥 통과한다.
+        // 더블탭이 원장을 두 벌 남기는 자리(판매 등록 등)에서 호출부가 키를 준다.
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
