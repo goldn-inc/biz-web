@@ -51,7 +51,8 @@ export default function GpItemDetailPage() {
   const [voidReason, setVoidReason] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [products, setProducts] = useState<GpProductLite[]>([]);
+  // null = 조회 실패. 모델 재연결 후보를 「없음」으로 단정하지 않기 위해 구분한다.
+  const [products, setProducts] = useState<GpProductLite[] | null>([]);
 
   const load = useCallback(() => {
     void bizApiFetch<GpItemDetail>(`/biz/gp/items/${encodeURIComponent(serial)}`, { token })
@@ -70,7 +71,7 @@ export default function GpItemDetailPage() {
   useEffect(() => {
     void bizApiFetch<{ products: GpProductLite[] }>("/biz/gp/products", { token })
       .then((r) => setProducts(r.products))
-      .catch(() => setProducts([]));
+      .catch(() => setProducts(null));
   }, [token]);
 
   /** 액션 공통 — 성공 시 재조회, 메시지는 상단 배너로. */
@@ -142,7 +143,7 @@ export default function GpItemDetailPage() {
 
   /** 모델 재연결 후보 — 같은 재질만(원장 재질이 얽힘, §8.1). */
   const productOptions = useMemo(
-    () => (data ? products.filter((p) => p.metalType === data.metalType) : []),
+    () => (data && products ? products.filter((p) => p.metalType === data.metalType) : []),
     [products, data],
   );
 
@@ -436,6 +437,11 @@ export default function GpItemDetailPage() {
               </div>
               <div className="col-span-2">
                 <div className={label}>모델 (같은 재질만)</div>
+                {products === null ? (
+                  <p className="text-[12px] font-semibold text-red-600">
+                    모델 목록을 불러오지 못해 재연결 후보를 표시할 수 없습니다.
+                  </p>
+                ) : null}
                 <select
                   value={editForm.gpProductId}
                   onChange={(e) =>

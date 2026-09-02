@@ -53,8 +53,9 @@ export default function GpReceivingPage() {
   const [receiveAllBusy, setReceiveAllBusy] = useState<string | null>(null);
 
   const [directOpen, setDirectOpen] = useState(false);
-  const [products, setProducts] = useState<GpProductLite[]>([]);
-  const [suppliers, setSuppliers] = useState<GpSupplier[]>([]);
+  // null = 조회 실패. 빈 배열(=진짜 0건)과 섞으면 모델이 있는 매장에 「기존 모델」을 잠근다.
+  const [products, setProducts] = useState<GpProductLite[] | null>([]);
+  const [suppliers, setSuppliers] = useState<GpSupplier[] | null>([]);
 
   const scanRef = useRef<HTMLInputElement>(null);
 
@@ -82,10 +83,10 @@ export default function GpReceivingPage() {
   const loadFormData = useCallback(() => {
     void bizApiFetch<{ suppliers: GpSupplier[] }>("/biz/gp/suppliers", { token })
       .then((r) => setSuppliers(r.suppliers))
-      .catch(() => setSuppliers([]));
+      .catch(() => setSuppliers(null));
     void bizApiFetch<{ products: GpProductLite[] }>("/biz/gp/products", { token })
       .then((r) => setProducts(r.products))
-      .catch(() => setProducts([]));
+      .catch(() => setProducts(null));
   }, [token]);
   useEffect(loadFormData, [loadFormData]);
 

@@ -6,7 +6,7 @@
  * 최근 적용 이력 섹션은 페이지 전용이라 포함하지 않는다.
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import {
   CouponTagIcon,
@@ -93,14 +93,37 @@ export function CouponApplyWidget({
   const [receipt, setReceipt] = useState<AppliedReceipt | null>(null);
 
   const [openTxs, setOpenTxs] = useState<ApiOpenTransaction[] | null>(null);
+  /** 진행중 거래 목록 조회 실패 — 쿠폰 검증 결과와 별개다. */
+  const [txLoadError, setTxLoadError] = useState(false);
   const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
+  /** 쿠폰 검증 자체가 실패한 경우의 문구. 사유 코드를 지어내지 않는다. */
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  /** 진행중 거래 목록만 따로 불러온다 — 이 조회의 실패가 쿠폰 검증 결과를 덮으면 안 된다. */
+  const loadOpenTransactions = useCallback(async () => {
+    setOpenTxs(null);
+    setTxLoadError(false);
+    try {
+      const { from, to } = weekRange();
+      const list = await bizApiFetch<{ transactions: ApiOpenTransaction[] }>(
+        `/biz/transactions?from=${from}&to=${to}&status=IN_PROGRESS`,
+        { token },
+      );
+      setOpenTxs(list.transactions);
+      setSelectedTxId(list.transactions[0]?.id ?? null);
+    } catch {
+      setTxLoadError(true);
+    }
+  }, [token]);
 
   async function lookup(rawCode: string) {
     const normalized = rawCode.trim().toUpperCase();
     if (!normalized) return;
     setView("loading");
     setApplyError(null);
+    setLookupError(null);
     setOpenTxs(null);
+    setTxLoadError(false);
     setSelectedTxId(null);
     try {
       const res = await bizApiFetch<ApiVerifyResult>("/biz/coupons/verify", {
@@ -111,17 +134,14 @@ export function CouponApplyWidget({
       setVerify(res);
       setView("result");
       if (res.result === "VALID") {
-        const { from, to } = weekRange();
-        const list = await bizApiFetch<{ transactions: ApiOpenTransaction[] }>(
-          `/biz/transactions?from=${from}&to=${to}&status=IN_PROGRESS`,
-          { token },
-        );
-        setOpenTxs(list.transactions);
-        setSelectedTxId(list.transactions[0]?.id ?? null);
+        // 거래 목록은 검증 try 밖에서 자체 처리한다 — 여기서 던지면 서버가 준 VALID 를
+        // NOT_FOUND(「존재하지 않는 쿠폰 코드입니다」)로 덮어써 멀쩡한 쿠폰을 가짜라고 말한다.
+        await loadOpenTransactions();
       }
     } catch (error) {
-      setVerify({ result: "NOT_FOUND", coupon: null });
-      setApplyError(
+      // 검증이 실패한 것이지 쿠폰이 없다고 밝혀진 게 아니다 — 사유 코드를 지어내지 않는다.
+      setVerify(null);
+      setLookupError(
         error instanceof BizApiError ? error.message : "쿠폰을 조회하지 못했습니다.",
       );
       setView("result");
@@ -218,6 +238,8 @@ export function CouponApplyWidget({
         <ValidCard
           coupon={verify.coupon}
           transactions={openTxs}
+          transactionsError={txLoadError}
+          onRetryTransactions={() => void loadOpenTransactions()}
           selectedTxId={selectedTxId}
           onSelectTx={setSelectedTxId}
           onApply={() => void applyToTransaction()}
@@ -228,6 +250,20 @@ export function CouponApplyWidget({
 
       {view === "result" && verify && verify.result === "ALREADY_USED" && verify.coupon && (
         <UsedCard coupon={verify.coupon} usedInfo={verify.usedInfo ?? null} />
+      )}
+
+      {view === "result" && lookupError && (
+        <div className="w-full max-w-xl bg-white border-2 border-red-100 rounded-3xl shadow-sm p-5 flex flex-col items-start gap-2">
+          <p className="text-sm font-extrabold text-red-600">쿠폰을 조회하지 못했습니다</p>
+          <p className="text-xs text-caption">{lookupError}</p>
+          <button
+            type="button"
+            onClick={() => void lookup(code)}
+            className="h-8 px-3 rounded-md border border-line bg-white text-xs font-bold"
+          >
+            다시 시도
+          </button>
+        </div>
       )}
 
       {view === "result" &&
@@ -248,6 +284,8 @@ export function CouponApplyWidget({
 function ValidCard({
   coupon,
   transactions,
+  transactionsError,
+  onRetryTransactions,
   selectedTxId,
   onSelectTx,
   onApply,
@@ -256,6 +294,9 @@ function ValidCard({
 }: {
   coupon: ApiCouponSummary;
   transactions: ApiOpenTransaction[] | null;
+  /** 진행중 거래 목록 조회 실패 — 「진행중인 거래가 없습니다」와 구분해서 그린다. */
+  transactionsError: boolean;
+  onRetryTransactions: () => void;
   selectedTxId: string | null;
   onSelectTx: (id: string) => void;
   onApply: () => void;
@@ -294,7 +335,20 @@ function ValidCard({
         </div>
         <div className="flex flex-col gap-2">
           <div className="text-xs font-extrabold text-body">적용할 거래 선택 (진행중 · 최근 7일)</div>
-          {transactions === null ? (
+          {transactionsError ? (
+            <div className="flex flex-col items-start gap-2 bg-surface border border-line rounded-2xl px-4 py-3.5">
+              <span className="text-sm font-semibold text-red-600">
+                진행중 거래 목록을 불러오지 못했습니다.
+              </span>
+              <button
+                type="button"
+                onClick={onRetryTransactions}
+                className="h-8 px-3 rounded-md border border-line bg-white text-xs font-bold"
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : transactions === null ? (
             <div className="h-16 rounded-2xl bg-slate-100 animate-pulse" />
           ) : transactions.length === 0 ? (
             <div className="text-sm text-caption bg-surface border border-line rounded-2xl px-4 py-3.5 leading-relaxed">

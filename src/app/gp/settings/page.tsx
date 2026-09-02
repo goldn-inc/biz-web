@@ -25,20 +25,26 @@ export default function GpSettingsPage() {
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // 조회 실패는 message 와 분리한다 — message 렌더 블록은 status 가 있을 때의 가지 안이라
+  // 실패하면 화면에 영원히 「불러오는 중…」만 남는다.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     void bizApiFetch<OpeningStatus>("/biz/gp/settings/opening", { token })
       .then((s) => {
-        if (!cancelled) setStatus(s);
+        if (cancelled) return;
+        setStatus(s);
+        setLoadError(null);
       })
       .catch(() => {
-        if (!cancelled) setMessage({ ok: false, text: "개시 상태를 불러오지 못했습니다." });
+        if (!cancelled) setLoadError("개시 상태를 불러오지 못했습니다.");
       });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, reload]);
 
   async function submit() {
     if (cash === "" && gold === "" && silver === "") {
@@ -99,7 +105,18 @@ export default function GpSettingsPage() {
           움직입니다.
         </p>
 
-        {!status ? (
+        {loadError ? (
+          <div className="flex flex-col items-start gap-2">
+            <div className="text-[12px] font-semibold text-red-600">{loadError}</div>
+            <button
+              type="button"
+              onClick={() => setReload((n) => n + 1)}
+              className="h-8 px-3 rounded-md border border-line bg-white text-[12px] font-semibold"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : !status ? (
           <div className="text-caption">불러오는 중…</div>
         ) : (
           <div className="flex flex-col gap-3">

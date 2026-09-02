@@ -77,8 +77,9 @@ export default function GpInventoryPage() {
   );
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const [suppliers, setSuppliers] = useState<GpSupplier[]>([]);
-  const [products, setProducts] = useState<GpProductLite[]>([]);
+  // null = 조회 실패. 빈 배열(=진짜 0건)과 섞으면 모델이 있는 매장에 「기존 모델」을 잠근다.
+  const [suppliers, setSuppliers] = useState<GpSupplier[] | null>([]);
+  const [products, setProducts] = useState<GpProductLite[] | null>([]);
   const [registerOpen, setRegisterOpen] = useState(false);
   /** 카다로그 「이 모델로 직접등록」(§8.4) — ?register=<gpProductId> 로 진입하면 프리셀렉트 오픈. */
   const [urlRegisterProductId, setUrlRegisterProductId] = useState<string | null>(null);
@@ -209,7 +210,7 @@ export default function GpInventoryPage() {
   const loadFormData = useCallback(() => {
     void bizApiFetch<{ suppliers: GpSupplier[] }>("/biz/gp/suppliers", { token })
       .then((r) => setSuppliers(r.suppliers))
-      .catch(() => setSuppliers([]));
+      .catch(() => setSuppliers(null));
     void bizApiFetch<{ products: GpProductLite[] }>("/biz/gp/products", { token })
       .then((r) => {
         setProducts(r.products);
@@ -220,7 +221,7 @@ export default function GpInventoryPage() {
           setRegisterOpen(true);
         }
       })
-      .catch(() => setProducts([]));
+      .catch(() => setProducts(null));
   }, [token]);
   useEffect(loadFormData, [loadFormData]);
 
@@ -442,7 +443,7 @@ export default function GpInventoryPage() {
           </select>
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={dd}>
             <option value="">입고처: 전체</option>
-            {suppliers.map((s) => (
+            {(suppliers ?? []).map((s) => (
               <option key={s.id} value={s.id}>
                 입고처: {s.name}
               </option>

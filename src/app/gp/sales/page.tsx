@@ -154,23 +154,6 @@ export default function GpSalesHistoryPage() {
 
   const summary: GpSalesPeriodSummary | undefined = loaded?.summary;
 
-  /** 반품 모달 열기 — 환불 프리필은 현금 우선(§8.3: 실무에서 환불은 현금이 기본). */
-  const openReturn = useCallback((sale: GpSale) => {
-    const returnable = sale.lines.filter((l) => !l.returned);
-    const checked: Record<string, boolean> = {};
-    for (const l of returnable) checked[l.id] = returnable.length === 1;
-    setReturnDraft({
-      sale,
-      checked,
-      refundCash: "",
-      refundTransfer: "",
-      refundCard: "",
-      memo: "",
-      submitting: false,
-      error: null,
-    });
-  }, []);
-
   /** 체크 상태가 바뀔 때마다 환불 3칸을 현금→이체→카드 순으로 다시 프리필. */
   const refillRefund = useCallback((draft: ReturnDraft, checked: Record<string, boolean>) => {
     const sale = draft.sale;
@@ -198,6 +181,37 @@ export default function GpSalesHistoryPage() {
       refundCard: String(card),
     };
   }, []);
+
+  /**
+   * 반품 모달 열기 — 환불 프리필은 현금 우선(§8.3: 실무에서 환불은 현금이 기본).
+   *
+   * 초안을 만든 뒤 곧바로 refillRefund 를 통과시킨다. 프리필을 체크박스 onChange 에서만
+   * 돌리면 단일 품목 판매(자동 체크)에서는 프리필 경로에 한 번도 닿지 않아, 환불 3칸이 빈 채로
+   * 「반품 확정」이 나가고 서버가 환불 합 불일치로 400 을 돌려준다.
+   */
+  const openReturn = useCallback(
+    (sale: GpSale) => {
+      const returnable = sale.lines.filter((l) => !l.returned);
+      const checked: Record<string, boolean> = {};
+      for (const l of returnable) checked[l.id] = returnable.length === 1;
+      setReturnDraft(
+        refillRefund(
+          {
+            sale,
+            checked,
+            refundCash: "",
+            refundTransfer: "",
+            refundCard: "",
+            memo: "",
+            submitting: false,
+            error: null,
+          },
+          checked,
+        ),
+      );
+    },
+    [refillRefund],
+  );
 
   const submitReturn = useCallback(() => {
     if (!returnDraft) return;

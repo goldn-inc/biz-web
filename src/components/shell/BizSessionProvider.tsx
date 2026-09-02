@@ -8,9 +8,11 @@ import {
   getBizSessionSnapshot,
   getHydratedServerSnapshot,
   getHydratedSnapshot,
+  saveBizSession,
   subscribeBizSession,
   type BizAccount,
 } from "@/lib/session";
+import { bizApiFetch } from "@/lib/api";
 
 type BizSessionContextValue = {
   account: BizAccount;
@@ -47,6 +49,27 @@ export function BizSessionProvider({ children }: { children: React.ReactNode }) 
       router.replace("/change-password");
     }
   }, [hydrated, session, router, pathname]);
+
+  /*
+   * 저장된 계정은 로그인 시점 스냅샷이다. 본사가 등급을 올려도(서버는 매 요청 DB 를 본다)
+   * 세션은 끊기지 않으므로, 새로고침해도 tier="NONE" 이 남아 도매 화면이 계속 잠긴 얼굴을
+   * 그린다. 셸 진입마다 서버 권위값으로 계정을 갱신한다.
+   */
+  const token = session?.token ?? null;
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void bizApiFetch<BizAccount>("/biz/auth/me", { token })
+      .then((me) => {
+        if (!cancelled) saveBizSession(token, me);
+      })
+      .catch(() => {
+        // 갱신 실패는 저장 스냅샷으로 계속 진행한다(가용성 우선). 실제 권한은 서버가 재검증한다.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   if (!hydrated || !session || session.account.mustChangePassword) return null;
 

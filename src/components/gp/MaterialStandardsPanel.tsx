@@ -19,6 +19,10 @@ export default function MaterialStandardsPanel() {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // 조회 실패는 message 와 분리한다 — message 렌더 블록은 rows 가 있을 때의 가지 안이라
+  // 실패하면 화면에 영원히 「불러오는 중…」만 남는다.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   function seed(standards: GpMaterialStandard[]) {
     setRows(standards);
@@ -36,15 +40,17 @@ export default function MaterialStandardsPanel() {
     let cancelled = false;
     void bizApiFetch<{ standards: GpMaterialStandard[] }>("/biz/gp/materials", { token })
       .then((res) => {
-        if (!cancelled) seed(res.standards);
+        if (cancelled) return;
+        seed(res.standards);
+        setLoadError(null);
       })
       .catch(() => {
-        if (!cancelled) setMessage({ ok: false, text: "재질 기준을 불러오지 못했습니다." });
+        if (!cancelled) setLoadError("재질 기준을 불러오지 못했습니다.");
       });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, reload]);
 
   async function submit() {
     if (!rows) return;
@@ -83,7 +89,18 @@ export default function MaterialStandardsPanel() {
         덮어쓰세요 — 그쪽이 우선입니다.
       </p>
 
-      {!rows ? (
+      {loadError ? (
+        <div className="flex flex-col items-start gap-2">
+          <div className="text-[12px] font-semibold text-red-600">{loadError}</div>
+          <button
+            type="button"
+            onClick={() => setReload((n) => n + 1)}
+            className="h-8 px-3 rounded-md border border-line bg-white text-[12px] font-semibold"
+          >
+            다시 시도
+          </button>
+        </div>
+      ) : !rows ? (
         <div className="text-caption">불러오는 중…</div>
       ) : (
         <div className="max-w-2xl">

@@ -752,6 +752,12 @@ export function RegistrationForm({
       return;
     }
     setLookupError(null);
+    // 새 번호를 조회하는 순간 직전 고객의 신원을 지운다. 남겨 두면 미등록 고객(NONE)이나
+    // 조회 실패에서 「새로 입력해주세요」 배너 아래에 앞 고객의 실명·생년월일이 그대로 남아,
+    // 특금법 실명확인 기록이 '앞 고객 신원 + 새 고객 전화번호'로 만들어진다.
+    setName("");
+    setBirth("");
+    setIdType(null);
     try {
       const res = await bizApiFetch<ApiLookup>(
         `/biz/transactions/customers/lookup?phone=${encodeURIComponent(digits)}`,
@@ -765,6 +771,8 @@ export function RegistrationForm({
         setBirth(res.customer.birthDate ?? "");
       }
     } catch (error) {
+      setLookupDone(false);
+      setLookup(null);
       setLookupError(
         error instanceof BizApiError ? error.message : "고객 조회에 실패했습니다.",
       );

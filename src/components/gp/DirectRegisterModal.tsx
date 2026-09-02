@@ -18,8 +18,10 @@ const CATEGORIES = Object.keys(GP_CATEGORY_LABEL) as GpCategory[];
 
 type Props = {
   token: string;
-  products: GpProductLite[];
-  suppliers: GpSupplier[];
+  /** null = 모델 목록 조회 실패. 빈 배열(=진짜 0건)과 구분해야 중복 모델 생성으로 몰지 않는다. */
+  products: GpProductLite[] | null;
+  /** null = 거래처 목록 조회 실패. */
+  suppliers: GpSupplier[] | null;
   /** 카다로그 「이 모델로 직접등록」(§8.4) — 모델 프리셀렉트. */
   initialProductId?: string;
   onClose: () => void;
@@ -39,13 +41,17 @@ export function DirectRegisterModal({
   onClose,
   onRegistered,
 }: Props) {
+  /** 조회 실패는 목록이 비었다는 뜻이 아니다 — 실패 상태에서는 신규 모델 생성 경로를 열지 않는다. */
+  const productsUnavailable = products === null;
+  const productList = useMemo(() => products ?? [], [products]);
+  const supplierList = suppliers ?? [];
   const initialProduct = initialProductId
-    ? products.find((p) => p.id === initialProductId)
+    ? productList.find((p) => p.id === initialProductId)
     : undefined;
   const [mode, setMode] = useState<"existing" | "new">(
-    initialProduct || products.length > 0 ? "existing" : "new",
+    initialProduct || productList.length > 0 ? "existing" : "new",
   );
-  const [gpProductId, setGpProductId] = useState(initialProduct?.id ?? products[0]?.id ?? "");
+  const [gpProductId, setGpProductId] = useState(initialProduct?.id ?? productList[0]?.id ?? "");
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState<GpCategory>("RING");
   const [metal, setMetal] = useState<GpMetalType>("GOLD");
@@ -63,8 +69,8 @@ export function DirectRegisterModal({
   const [error, setError] = useState<string | null>(null);
 
   const selectedProduct = useMemo(
-    () => products.find((p) => p.id === gpProductId) ?? null,
-    [products, gpProductId],
+    () => productList.find((p) => p.id === gpProductId) ?? null,
+    [productList, gpProductId],
   );
   /** 기존 모델 선택 시 순도 후보는 그 모델의 재질을 따른다. */
   const effectiveMetal = mode === "existing" ? (selectedProduct?.metalType ?? "GOLD") : metal;
@@ -152,12 +158,33 @@ export function DirectRegisterModal({
           </button>
         </div>
 
+        {productsUnavailable ? (
+          /*
+           * 모델 목록 실패를 빈 목록으로 삼키면 「기존 모델」이 잠기고, 모델 500개를 가진 매장이
+           * 이미 있는 모델을 새로 만든다 — 카다로그에 중복 행이 생기고 집계가 갈라진다.
+           */
+          <div className="flex flex-col items-start gap-2 py-6">
+            <p className="text-[13px] font-semibold text-red-600">
+              모델 목록을 불러오지 못했습니다.
+            </p>
+            <p className="text-[12px] text-caption">
+              기존 모델이 있는지 확인할 수 없어 신규 모델 생성을 막았습니다. 다시 시도해 주세요.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 px-3 rounded-md border border-line bg-white font-semibold"
+            >
+              닫기
+            </button>
+          </div>
+        ) : (
         <div className="flex flex-col gap-2.5">
           <div className="flex gap-1.5">
             <button
               type="button"
               onClick={() => setMode("existing")}
-              disabled={products.length === 0}
+              disabled={productList.length === 0}
               className={`h-7 px-3 rounded-md border ${
                 mode === "existing"
                   ? "border-primary text-primary font-bold"
@@ -185,7 +212,7 @@ export function DirectRegisterModal({
                 onChange={(e) => setGpProductId(e.target.value)}
                 className={field}
               >
-                {products.map((p) => (
+                {productList.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} · {GP_CATEGORY_LABEL[p.category]} · {p.purityCode}
                   </option>
@@ -290,7 +317,7 @@ export function DirectRegisterModal({
                 className={field}
               >
                 <option value="">선택 안 함</option>
-                {suppliers.map((s) => (
+                {supplierList.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -385,6 +412,7 @@ export function DirectRegisterModal({
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

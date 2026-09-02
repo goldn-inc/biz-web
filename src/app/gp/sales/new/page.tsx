@@ -141,6 +141,8 @@ export default function GpSalesNewPage() {
         },
       });
       setLastSale(sale);
+      // 다음 판매가 방금 응답으로 replay 되지 않도록 성공 직후 키를 새로 뽑는다.
+      submitKeyRef.current = crypto.randomUUID();
       setLines([]);
       setCash("");
       setTransfer("");

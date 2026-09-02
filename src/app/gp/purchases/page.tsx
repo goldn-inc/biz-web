@@ -9,6 +9,7 @@ import {
   GP_PURITY_CODES,
   gram,
   krw,
+  type GpMaterialStandard,
   type GpPurchaseDetail,
   type GpPurchaseLineKind,
   type GpPurchaseOutstanding,
@@ -82,6 +83,11 @@ export default function GpPurchasesPage() {
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  /** 매장 재질 기준(순도별 해리). 미리보기 해리 폴백이 서버와 같은 값을 쓰게 하는 소스. */
+  const [materialStandards, setMaterialStandards] = useState<GpMaterialStandard[] | null>(null);
+  /** 미수 조회 실패 — 0원으로 그리면 사장이 그 0을 사실로 읽는다. */
+  const [outstandingError, setOutstandingError] = useState(false);
+  const [outstandingReload, setOutstandingReload] = useState(0);
 
   const loadList = useCallback(() => {
     void bizApiFetch<{ purchases: GpPurchaseRow[] }>("/biz/gp/purchases?limit=50", { token })
@@ -93,6 +99,10 @@ export default function GpPurchasesPage() {
     void bizApiFetch<{ suppliers: GpSupplierRow[] }>("/biz/gp/suppliers", { token })
       .then((res) => setSuppliers(res.suppliers))
       .catch(() => setMessage({ ok: false, text: "거래처를 불러오지 못했습니다." }));
+    // 미리보기 해리 폴백이 서버(재질 기준)와 같은 값을 쓰도록 표를 먼저 받아 둔다.
+    void bizApiFetch<{ standards: GpMaterialStandard[] }>("/biz/gp/materials", { token })
+      .then((res) => setMaterialStandards(res.standards))
+      .catch(() => setMessage({ ok: false, text: "재질 기준을 불러오지 못했습니다." }));
     loadList();
   }, [token, loadList]);
 
@@ -105,15 +115,19 @@ export default function GpPurchasesPage() {
       { token },
     )
       .then((res) => {
-        if (!cancelled) setFetchedOutstanding(res);
+        if (cancelled) return;
+        setFetchedOutstanding(res);
+        setOutstandingError(false);
       })
       .catch(() => {
-        if (!cancelled) setFetchedOutstanding(null);
+        if (cancelled) return;
+        setFetchedOutstanding(null);
+        setOutstandingError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [supplierId, token]);
+  }, [supplierId, token, outstandingReload]);
 
   /** 거래처를 바꾸면 이전 거래처의 미수가 잠깐 남아 보이지 않도록 id 로 한 번 더 맞춘다. */
   const outstanding =
@@ -145,6 +159,20 @@ export default function GpPurchasesPage() {
     [lines],
   );
 
+  /**
+   * 순도 → 매장 기준 해리. 서버 effectiveHallmark 와 같은 규칙(applyHallmark=false 면 1).
+   * 표를 아직 못 읽었으면 null — 그 상태에서 1 로 단정하면 순금환산이 서버와 10% 갈린다.
+   */
+  const standardHallmarkOf = useCallback(
+    (purityCode: string): number | null => {
+      if (!materialStandards) return null;
+      const std = materialStandards.find((m) => m.purityCode === purityCode);
+      if (!std) return 1;
+      return std.applyHallmark ? std.hallmarkFactor : 1;
+    },
+    [materialStandards],
+  );
+
   /* 화면 미리보기 — 서버 산식과 같은 순서로 계산한다(저장 후 숫자가 달라 보이면 안 된다). */
   const preview = useMemo(() => {
     let purchaseAmount = 0;
@@ -156,16 +184,30 @@ export default function GpPurchasesPage() {
       const quantity = Number(line.quantity || "1");
       const unitPrice = line.unitPrice === "" ? null : Number(line.unitPrice);
       const supply = unitPrice != null ? unitPrice * quantity : 0;
-      const rate = line.taxRate !== "" ? Number(line.taxRate) : Number(defaultTaxRate || "0");
+      /*
+       * 헤더 기본세율은 매입·반품에만 걸린다(서버 computeLine 과 같은 분기). 결제 라인에도
+       * 얹으면 미리보기의 「매입 후 미수」가 실제 저장값보다 세액만큼 적게 나온다.
+       */
+      const rate =
+        line.taxRate !== ""
+          ? Number(line.taxRate)
+          : line.kind === "PAYMENT"
+            ? 0
+            : Number(defaultTaxRate || "0");
       const total = supply + (rate ? Math.round((supply * rate) / 100) : 0);
 
       const weight = line.actualWeightG === "" ? null : Number(line.actualWeightG);
+      /*
+       * 해리 폴백은 하드코딩 1 이 아니라 매장 재질 기준이다 — 서버는 라인 → 헤더 → 재질 기준
+       * 순으로 고르므로, 여기서 1 로 떨어뜨리면 18K·14K(기준 1.1)에서 순금환산이 10% 갈린다.
+       */
+      const standard = line.purityCode ? standardHallmarkOf(line.purityCode) : null;
       const hallmark =
         line.hallmarkFactor !== ""
           ? Number(line.hallmarkFactor)
           : defaultHallmark !== ""
             ? Number(defaultHallmark)
-            : 1;
+            : (standard ?? 1);
       const coefficient = PRICING_FACTOR[line.purityCode] ?? null;
       const pureGram = weight != null && coefficient != null ? weight * coefficient * hallmark : 0;
 
@@ -188,7 +230,7 @@ export default function GpPurchasesPage() {
         pureGram: before.pureGram + purchaseGram - settledGram,
       },
     };
-  }, [filledLines, defaultHallmark, defaultTaxRate, outstanding]);
+  }, [filledLines, defaultHallmark, defaultTaxRate, outstanding, standardHallmarkOf]);
 
   async function submit() {
     if (!supplierId) {
@@ -428,8 +470,27 @@ export default function GpPurchasesPage() {
           <aside className="w-72 shrink-0">
             <div className="rounded-lg border border-line p-3">
               <div className="text-[13px] font-extrabold mb-2">
-                {outstanding?.supplierName ?? "매입처를 선택하세요"}
+                {/* 미수 조회가 실패해도 고른 매입처 이름은 유지한다 — 「매입처를 선택하세요」로
+                    되돌리면 고른 적이 없는 것처럼 읽힌다. */}
+                {outstanding?.supplierName ??
+                  suppliers.find((sp) => sp.id === supplierId)?.name ??
+                  "매입처를 선택하세요"}
               </div>
+
+              {outstandingError ? (
+                <div className="mb-2 flex flex-col items-start gap-1.5 rounded-md bg-red-50 px-2 py-1.5">
+                  <span className="text-[12px] font-semibold text-red-600">
+                    미수를 불러오지 못했습니다 — 아래 미수 값은 계산할 수 없습니다.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOutstandingReload((n) => n + 1)}
+                    className="h-7 rounded-md border border-line bg-white px-2 text-[12px] font-semibold"
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              ) : null}
               <table className="w-full text-[12px]">
                 <thead>
                   <tr className="text-caption">
@@ -452,8 +513,18 @@ export default function GpPurchasesPage() {
                       className={i === 3 ? "border-t border-line font-bold" : "border-t border-line/50"}
                     >
                       <td className="py-1.5">{label}</td>
-                      <td className="py-1.5 text-right tabular-nums">{gram(value.pureGram)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{krw(value.amount)}</td>
+                      {/* 미수를 못 읽었으면 미수가 섞인 두 행(전·후)은 숫자로 단정하지 않는다. */}
+                      {outstandingError && (i === 0 || i === 3) ? (
+                        <>
+                          <td className="py-1.5 text-right tabular-nums text-caption">—</td>
+                          <td className="py-1.5 text-right tabular-nums text-caption">—</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-1.5 text-right tabular-nums">{gram(value.pureGram)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{krw(value.amount)}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

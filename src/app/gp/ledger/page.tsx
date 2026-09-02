@@ -27,6 +27,8 @@ type MetalLedger = {
   metal: "GOLD" | "SILVER";
   balance: number;
   itemSum: number;
+  /** 대여중(RENTED) 개체 합. 원장은 대여를 자산으로 계속 들고 있어 대조에 포함된다. */
+  rentedPureGram?: number;
   difference: number;
   hasOpening: boolean;
   unconvertibleCount: number;
@@ -47,6 +49,11 @@ function MetalCard({ label, data }: { label: string; data: MetalLedger | null })
       {data ? (
         <div className="mt-1 flex items-center gap-1.5 text-[11px]">
           <span className="text-caption tabular-nums">개체 합 {gram(data.itemSum)}g</span>
+          {data.rentedPureGram ? (
+            <span className="text-caption tabular-nums">
+              (대여중 {gram(data.rentedPureGram)}g 포함)
+            </span>
+          ) : null}
           {ok ? (
             <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold">
               일치

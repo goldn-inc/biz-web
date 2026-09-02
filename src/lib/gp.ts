@@ -550,6 +550,9 @@ export const GP_EVENT_LABEL: Record<string, string> = {
   VOIDED: "무효처리",
   UPDATED: "정보 수정",
   LABEL_QUEUED: "라벨 인쇄",
+  // 서버 GpItemEventType 과 짝을 맞춘다 — 라벨이 없으면 이력에 영문 코드가 그대로 찍힌다.
+  IMPORTED: "이관 등록",
+  PURCHASE_REGISTERED: "매입 전표 등록",
 };
 
 export const GP_CASH_TYPE_LABEL: Record<string, string> = {

@@ -69,6 +69,10 @@ export default function GpStatsPage() {
       })
       .catch((error) => {
         if (!cancelled) {
+          // 직전 조건의 결과를 남겨 두면 기간·차원만 바뀐 화면이 새 조건의 값인 척한다
+          // (「오늘」을 눌렀는데 이달 숫자, 「분류」로 바꿨는데 재질 행). 엑셀도 그 값을 내보낸다.
+          setSales(null);
+          setStale(null);
           setLoadError(
             error instanceof BizApiError ? error.message : "통계를 불러오지 못했습니다.",
           );
@@ -181,7 +185,18 @@ export default function GpStatsPage() {
         </div>
       </div>
 
-      {loadError ? <div className="p-6 text-center text-red-600">{loadError}</div> : null}
+      {loadError ? (
+        <div className="p-6 flex flex-col items-center gap-2">
+          <span className="text-red-600">{loadError}</span>
+          <button
+            type="button"
+            onClick={() => setReload((n) => n + 1)}
+            className="h-8 px-3 rounded-md border border-line bg-white text-[13px] font-semibold"
+          >
+            다시 시도
+          </button>
+        </div>
+      ) : null}
 
       <div className="p-4 flex flex-col gap-4 max-w-5xl">
         {/* 상단 카드 4장 */}

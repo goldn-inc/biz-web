@@ -753,9 +753,11 @@ function ProductCard({
                       <PlusIcon className="w-4 h-4" />
                     </button>
                   </div>
+                  {/* onAdd 없이 렌더되면(등급 미해금 카탈로그) 눌러도 아무 일도 안 나는 죽은 버튼이 된다. */}
                   <button
                     onClick={() => onAdd?.(qty)}
-                    className="flex-1 h-10 px-4 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-bold transition"
+                    disabled={!onAdd}
+                    className="flex-1 h-10 px-4 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-bold transition disabled:opacity-40 disabled:hover:bg-primary"
                   >
                     담기
                   </button>

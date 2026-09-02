@@ -252,18 +252,31 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="flex gap-2.5">
+            {/* 목록이 이미 쓰는 null 판정을 타일에도 적용한다 — 0 은 조회가 성공해 실제로 0건일 때만 나와야 한다. */}
             <div className="flex-1 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
               <div className="text-xs font-semibold text-amber-800">대기중</div>
               <div className="text-2xl font-extrabold text-amber-700">
-                {todayReservations.filter((r) => r.status === "PENDING" || r.status === "WAITLISTED").length}
-                <span className="text-sm font-semibold">건</span>
+                {reservations === null ? (
+                  "—"
+                ) : (
+                  <>
+                    {todayReservations.filter((r) => r.status === "PENDING" || r.status === "WAITLISTED").length}
+                    <span className="text-sm font-semibold">건</span>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex-1 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
               <div className="text-xs font-semibold text-green-800">확정</div>
               <div className="text-2xl font-extrabold text-green-600">
-                {todayReservations.filter((r) => r.status === "CONFIRMED").length}
-                <span className="text-sm font-semibold">건</span>
+                {reservations === null ? (
+                  "—"
+                ) : (
+                  <>
+                    {todayReservations.filter((r) => r.status === "CONFIRMED").length}
+                    <span className="text-sm font-semibold">건</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -310,8 +323,14 @@ export default function DashboardPage() {
           <div className="bg-surface border border-line rounded-2xl px-4 py-3 flex items-baseline gap-2">
             <div className="text-xs font-semibold text-caption">오늘 처리</div>
             <div className="text-2xl font-extrabold">
-              {activeTx.length}
-              <span className="text-sm font-semibold">건</span>
+              {transactions === null ? (
+                "—"
+              ) : (
+                <>
+                  {activeTx.length}
+                  <span className="text-sm font-semibold">건</span>
+                </>
+              )}
             </div>
           </div>
           {transactions === null ? (
