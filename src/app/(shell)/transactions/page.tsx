@@ -139,8 +139,9 @@ function TransactionsPageInner() {
         <div>
           <h1 className="text-xl md:text-2xl font-extrabold tracking-tight m-0">거래</h1>
           <div className="text-sm text-caption mt-1.5">
+            {/* 0 은 조회가 성공해 실제로 0건일 때만 — 로딩·실패 중에는 숫자를 단정하지 않는다. */}
             {todayLabel} · KST · {DATE_FILTERS.find((f) => f.key === dateRange)?.label}{" "}
-            {transactions.length}건
+            {loading || loadError ? "—" : `${transactions.length}건`}
           </div>
         </div>
         <button
@@ -170,7 +171,7 @@ function TransactionsPageInner() {
         </div>
         {STATUS_FILTERS.map((s) => (
           <FilterChip key={s} active={statusFilter === s} onClick={() => setStatusFilter(s)}>
-            {s === "ALL" ? "전체" : STATUS_META[s].label} {counts[s]}
+            {s === "ALL" ? "전체" : STATUS_META[s].label} {loading || loadError ? "—" : counts[s]}
           </FilterChip>
         ))}
       </div>

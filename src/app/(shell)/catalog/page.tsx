@@ -231,18 +231,19 @@ export default function CatalogPage() {
         </Button>
       </div>
 
+      {/* 0 은 조회가 성공해 실제로 0건일 때만 — 실패 중에는 숫자를 단정하지 않는다. */}
       <div className="flex gap-2 flex-wrap">
         <FilterChip active={filter === "all"} onClick={() => setFilter("all")}>
-          전체 {counts.all}
+          전체 {loadError ? "—" : counts.all}
         </FilterChip>
         <FilterChip active={filter === "PENDING"} onClick={() => setFilter("PENDING")}>
-          대기중 {counts.PENDING}
+          대기중 {loadError ? "—" : counts.PENDING}
         </FilterChip>
         <FilterChip active={filter === "APPROVED"} onClick={() => setFilter("APPROVED")}>
-          승인 {counts.APPROVED}
+          승인 {loadError ? "—" : counts.APPROVED}
         </FilterChip>
         <FilterChip active={filter === "REJECTED"} onClick={() => setFilter("REJECTED")}>
-          반려 {counts.REJECTED}
+          반려 {loadError ? "—" : counts.REJECTED}
         </FilterChip>
       </div>
 

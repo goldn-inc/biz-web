@@ -45,6 +45,8 @@ export function DirectRegisterModal({
   const productsUnavailable = products === null;
   const productList = useMemo(() => products ?? [], [products]);
   const supplierList = suppliers ?? [];
+  /** 입고처도 모델 목록과 같은 규율 — 조회 실패를 "입고처 없음"으로 그리면 미지정으로 개체가 올라간다. */
+  const suppliersUnavailable = suppliers === null;
   const initialProduct = initialProductId
     ? productList.find((p) => p.id === initialProductId)
     : undefined;
@@ -322,8 +324,14 @@ export function DirectRegisterModal({
                     {s.name}
                   </option>
                 ))}
-                <option value={NEW_SUPPLIER}>+ 새 입고처…</option>
+                {/* 조회 실패 상태에서는 신규 생성 경로를 열지 않는다 — 중복 입고처가 생긴다. */}
+                {suppliersUnavailable ? null : <option value={NEW_SUPPLIER}>+ 새 입고처…</option>}
               </select>
+              {suppliersUnavailable ? (
+                <div className="mt-1 text-[11px] font-semibold text-red-600">
+                  입고처 목록을 불러오지 못했습니다 — 등록된 입고처가 없는 것이 아닙니다.
+                </div>
+              ) : null}
             </div>
           </div>
 

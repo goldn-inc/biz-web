@@ -391,6 +391,8 @@ export type GpStatsStaleItem = {
 export type GpStatsStaleResponse = {
   days: number;
   items: GpStatsStaleItem[];
+  /** 상한(500) 없는 전체 건수 — items 가 잘렸는지 화면이 알기 위함. 구 서버는 미제공. */
+  total?: number;
   subtotals: {
     metalType: GpMetalType;
     purityCode: string;

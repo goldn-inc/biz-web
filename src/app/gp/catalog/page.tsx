@@ -136,8 +136,10 @@ export default function GpCatalogPage() {
   const [rows, setRows] = useState<GpCatalogProduct[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [suppliers, setSuppliers] = useState<GpSupplier[]>([]);
-  const [stones, setStones] = useState<GpStoneRow[]>([]);
+  // null = 조회 실패. 빈 배열(=진짜 0건)과 섞으면 거래처 30곳을 둔 매장이 '아무것도 없는 매장'으로
+  // 보이고, 사장이 신규 생성 경로로 몰려 중복 행이 생긴다(서버는 완전 동일 이름만 재사용).
+  const [suppliers, setSuppliers] = useState<GpSupplier[] | null>([]);
+  const [stones, setStones] = useState<GpStoneRow[] | null>([]);
   const [editing, setEditing] = useState<{ id: string | null; form: FormState } | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -210,10 +212,10 @@ export default function GpCatalogPage() {
   useEffect(() => {
     void bizApiFetch<{ suppliers: GpSupplier[] }>("/biz/gp/suppliers", { token })
       .then((r) => setSuppliers(r.suppliers))
-      .catch(() => setSuppliers([]));
+      .catch(() => setSuppliers(null));
     void bizApiFetch<{ stones: GpStoneRow[] }>("/biz/gp/stones", { token })
       .then((r) => setStones(r.stones))
-      .catch(() => setStones([]));
+      .catch(() => setStones(null));
   }, [token, reload]);
 
   const uploadImage = useCallback(
@@ -391,7 +393,7 @@ export default function GpCatalogPage() {
           </label>
           {stoneFilter ? (
             <span className="flex items-center gap-1 px-2 h-8 rounded-md bg-amber-50 text-amber-800 text-[12px] font-semibold">
-              스톤: {stones.find((s) => s.id === stoneFilter)?.name ?? "필터"}
+              스톤: {(stones ?? []).find((s) => s.id === stoneFilter)?.name ?? "필터"}
               <button
                 type="button"
                 onClick={() => setStoneFilter(null)}
@@ -824,12 +826,13 @@ export default function GpCatalogPage() {
                     className={dd + " w-full"}
                   >
                     <option value="">미지정</option>
-                    {suppliers.map((s) => (
+                    {(suppliers ?? []).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
                     ))}
-                    <option value={NEW_SUPPLIER}>+ 새 매입처…</option>
+                    {/* 조회 실패 상태에서는 신규 생성 경로를 열지 않는다 — 중복 매입처가 생긴다. */}
+                    {suppliers !== null ? <option value={NEW_SUPPLIER}>+ 새 매입처…</option> : null}
                   </select>
                 </div>
                 {editing.form.supplierSel === NEW_SUPPLIER ? (
@@ -867,12 +870,12 @@ export default function GpCatalogPage() {
                         className={dd + " w-full"}
                       >
                         <option value="">없음</option>
-                        {stones.map((s) => (
+                        {(stones ?? []).map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.name}
                           </option>
                         ))}
-                        <option value={NEW_STONE}>+ 새 스톤…</option>
+                        {stones !== null ? <option value={NEW_STONE}>+ 새 스톤…</option> : null}
                       </select>
                     </div>
                     {editing.form[selKey] ? (

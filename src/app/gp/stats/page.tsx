@@ -298,7 +298,11 @@ export default function GpStatsPage() {
               ))}
             </select>
             <span className="text-[12px] text-caption">
-              {stale ? `${stale.items.length}건` : "…"}
+              {stale
+              ? stale.total != null && stale.items.length < stale.total
+                ? `표시 ${stale.items.length} / 전체 ${stale.total}건`
+                : `${stale.items.length}건`
+              : "…"}
             </span>
             <button
               type="button"
