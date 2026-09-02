@@ -311,11 +311,16 @@ export default function GpItemDetailPage() {
                   <span className="font-semibold whitespace-nowrap">
                     {GP_EVENT_LABEL[ev.eventType] ?? ev.eventType}
                   </span>
-                  {ev.metadata && typeof ev.metadata.reason === "string" ? (
-                    <span className="text-[12px] text-caption truncate">
-                      — {ev.metadata.reason}
-                    </span>
-                  ) : null}
+                  {/* reason 만 렌더하면 직접등록 「메모」가 어디서도 안 보인다 — 입력만 받고 버리는 칸이 된다. */}
+                    {ev.metadata
+                      ? [
+                          typeof ev.metadata.reason === "string" ? ev.metadata.reason : null,
+                          typeof ev.metadata.memo === "string" ? ev.metadata.memo : null,
+                        ]
+                          .filter(Boolean)
+                          .map((t) => ` — ${t}`)
+                          .join("")
+                      : null}
                   <span className="ml-auto text-caption tabular-nums whitespace-nowrap text-[12px]">
                     {kstDateTime(ev.createdAt)}
                   </span>

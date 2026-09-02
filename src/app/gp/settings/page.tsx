@@ -69,7 +69,18 @@ export default function GpSettingsPage() {
       setGold("");
       setSilver("");
       setMemo("");
-      setMessage({ ok: true, text: "저장됐습니다. 시재 원장에 행이 추가됐습니다." });
+      /*
+       * 목표가 0 이거나 현재 잔액과 차이가 없으면 서버는 아무 행도 만들지 않는다 —
+       * 그때도 「행이 추가됐습니다」라고 말하면 화면이 하지 않은 일을 했다고 하는 셈이다.
+       */
+      const written = (next as { writtenRows?: number }).writtenRows;
+      setMessage({
+        ok: true,
+        text:
+          written === 0
+            ? "저장됐습니다. 현재 잔액과 차이가 없어 원장에 추가된 행은 없습니다."
+            : "저장됐습니다. 시재 원장에 행이 추가됐습니다.",
+      });
     } catch (e) {
       setMessage({
         ok: false,

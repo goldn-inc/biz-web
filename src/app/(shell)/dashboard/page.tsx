@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence } from "motion/react";
-import { BellIcon, ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon, XIcon } from "@/components/icons";
+import { ChevronRightIcon, PlusIcon, TicketIcon, CalendarIcon, WholesaleIcon, AlertCircleIcon, XIcon } from "@/components/icons";
 import { Badge, ScrollDialog } from "@/components/ui";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch } from "@/lib/api";
@@ -195,12 +195,6 @@ export default function DashboardPage() {
           </div>
           <div className="text-sm text-caption">오늘 · KST</div>
         </div>
-        <button
-          aria-label="알림"
-          className="relative w-11 h-11 rounded-2xl bg-white border border-line grid place-items-center text-body hover:text-primary hover:border-primary-light shrink-0"
-        >
-          <BellIcon className="w-5 h-5" />
-        </button>
       </div>
 
       {error ? (

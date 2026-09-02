@@ -10,6 +10,7 @@ import {
   GP_CATEGORY_LABEL,
   GP_METAL_LABEL,
   GP_PURITIES_BY_METAL,
+  displayTagPrice,
   gram,
   krw,
   kstDate,
@@ -474,9 +475,18 @@ export default function GpCatalogPage() {
                   ) : null}
                   <div className="text-[12px] text-body flex items-center gap-2">
                     <span>공임 {krw(p.defaultLaborFeeKrw)}</span>
-                    <span className="ml-auto font-bold text-red-600 tabular-nums">
-                      {p.defaultTagPrice != null ? krw(p.defaultTagPrice) : ""}
-                    </span>
+                    {/* 표 보기·재고 목록과 같은 판정 — 카드만 고정가를 찍어 값이 갈리던 자리. */}
+                    {(() => {
+                      const t = displayTagPrice(p);
+                      return (
+                        <span className="ml-auto font-bold text-red-600 tabular-nums">
+                          {t.value != null ? krw(t.value) : <span className="text-caption font-normal">—</span>}
+                          {t.badge ? (
+                            <span className="ml-1 text-[10px] text-caption font-semibold">{t.badge}</span>
+                          ) : null}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="text-[12px] text-caption truncate">
                     {p.supplierName ?? "매입처 미지정"}

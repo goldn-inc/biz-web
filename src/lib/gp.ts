@@ -540,6 +540,23 @@ export type GpStocktakeMaterialStat = {
   costSum: number;
 };
 
+/**
+ * 화면에 찍을 TAG가 — 시세연동가가 서면 그것이 진짜 TAG가다.
+ *
+ * 카다로그 카드가 `defaultTagPrice` 만 읽어서, 시세연동으로만 값이 서는 모델은 가격 칸이 비고
+ * 옛 고정가가 남은 모델은 시세가 움직여도 옛 값을 확정 가격처럼 보여줬다 — 같은 페이지의
+ * 「표 보기」·재고 목록·판매 등록 프리필과 값이 갈렸다. 세 화면이 같은 판정을 쓰도록 한 곳에 모은다.
+ */
+export function displayTagPrice(p: {
+  tagPriceSource?: "SPOT" | "FIXED" | "NONE" | null;
+  linkedTagPrice?: number | null;
+  defaultTagPrice?: number | null;
+}): { value: number | null; badge: "시세" | "고정" | null } {
+  if (p.tagPriceSource === "SPOT") return { value: p.linkedTagPrice ?? null, badge: "시세" };
+  if (p.tagPriceSource === "FIXED") return { value: p.defaultTagPrice ?? null, badge: "고정" };
+  return { value: null, badge: null };
+}
+
 export const GP_EVENT_LABEL: Record<string, string> = {
   RECEIVED: "도매 입고",
   DIRECT_REGISTERED: "직접등록",

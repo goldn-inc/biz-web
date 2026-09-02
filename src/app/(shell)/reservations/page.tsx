@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { Badge, FilterChip, ListRow } from "@/components/ui";
-import { AlertCircleIcon, BellIcon, CalendarIcon } from "@/components/icons";
+import { AlertCircleIcon, CalendarIcon } from "@/components/icons";
 import { useBizSession } from "@/components/shell/BizSessionProvider";
 import { bizApiFetch, BizApiError } from "@/lib/api";
 import {
@@ -171,13 +171,6 @@ export default function ReservationsPage() {
             {reservations.length}건
           </div>
         </div>
-        <button
-          aria-label="알림"
-          className="relative w-11 h-11 rounded-2xl bg-white border border-line grid place-items-center text-body hover:text-primary hover:border-primary-light shrink-0"
-        >
-          <BellIcon className="w-5 h-5" />
-          <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-primary ring-2 ring-white" />
-        </button>
       </div>
 
       <div className="flex flex-col gap-2.5">

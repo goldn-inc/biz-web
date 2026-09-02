@@ -372,7 +372,15 @@ export default function GpInventoryPage() {
         <div className="flex items-center gap-2 mb-2">
           <h1 className="text-[15px] font-extrabold">재고 목록</h1>
           <span className="text-caption text-[12px]">
-            {loading ? "불러오는 중…" : `${rowCount.toLocaleString()}건`}
+            {loading
+              ? "불러오는 중…"
+              : /* 헤더는 필터에 걸린 전체 수 기준 — 「불러온 행 수」를 찍으면 200에서 멈춰,
+                   같은 화면 하단의 「200 / 1,530 표시」와 다른 숫자를 말한다. */
+                groupByModel
+                ? `${groups.length.toLocaleString()}건`
+                : data?.total != null && data.total > rows.length
+                  ? `${data.total.toLocaleString()}건 (${rows.length.toLocaleString()} 표시)`
+                  : `${rowCount.toLocaleString()}건`}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
             <button
