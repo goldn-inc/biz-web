@@ -48,6 +48,11 @@ type ApiProduct = {
   name: string;
   imageUrl: string | null;
   unitPrice: number;
+  /**
+   * 등급가를 만들지 못한 사유(공임 미설정·순도/중량 미상·시세 수집 실패). 값이 있으면 unitPrice 는
+   * 0 이라 그대로 찍으면 '0원'이 확정 가격처럼 보인다 — /wholesale 화면과 같은 판정을 써야 한다.
+   */
+  priceUnavailableReason?: string | null;
   stock: number;
   orderCount?: number;
 };
@@ -614,7 +619,13 @@ function ProductTabsCard({
               </div>
               <div className="text-sm font-semibold truncate group-hover:text-primary">{p.name}</div>
               <div className="flex items-center justify-between -mt-1">
-                <span className="text-sm font-extrabold tabular-nums">{won(p.unitPrice)}</span>
+                {p.priceUnavailableReason ? (
+                  <span className="text-[12px] font-bold text-caption" title={p.priceUnavailableReason}>
+                    가격 산출 불가
+                  </span>
+                ) : (
+                  <span className="text-sm font-extrabold tabular-nums">{won(p.unitPrice)}</span>
+                )}
                 <span className="text-[11px] font-semibold text-caption">
                   {p.stock > 0 ? `재고 ${p.stock}` : "발주 가능"}
                 </span>
